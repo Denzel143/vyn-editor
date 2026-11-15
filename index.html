@@ -60,23 +60,32 @@
     /* ===== Simulator VynWatch (overlay) ===== */
     #simOverlay { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; padding:16px; --vh:100vh; background:rgba(5,8,10,0); backdrop-filter:blur(0); overscroll-behavior:contain; transition:background .26s ease, backdrop-filter .26s ease; }
     #fvOverlay { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; padding:16px; --vh:100vh; background:rgba(5,8,10,0); backdrop-filter:blur(0); overscroll-behavior:contain; transition:background .26s ease, backdrop-filter .26s ease; }
+    #agOverlay { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; padding:16px; --vh:100vh; background:rgba(5,8,10,0); backdrop-filter:blur(0); overscroll-behavior:contain; transition:background .26s ease, backdrop-filter .26s ease; }
     #simOverlay.show { display:flex; }
     #fvOverlay.show { display:flex; }
+    #agOverlay.show { display:flex; }
     @supports (height:100dvh) { #simOverlay { --vh:100dvh; } }
     @supports (height:100dvh) { #fvOverlay { --vh:100dvh; } }
+    @supports (height:100dvh) { #agOverlay { --vh:100dvh; } }
     #simOverlay.in { background:rgba(5,8,10,.8); backdrop-filter:blur(4px); }
     #fvOverlay.in { background:rgba(5,8,10,.8); backdrop-filter:blur(4px); }
+    #agOverlay.in { background:rgba(5,8,10,.8); backdrop-filter:blur(4px); }
     .sim-card { width:min(1060px,100%); max-height:calc(var(--vh) - 32px); overflow:auto; overscroll-behavior:contain; padding:16px; border:1px solid var(--line); border-radius:18px; background:var(--card); box-shadow:0 24px 80px #000a; opacity:0; transform:translateY(28px) scale(.96); transition:opacity .26s ease, transform .3s cubic-bezier(.2,.8,.2,1); }
     #simOverlay.in .sim-card { opacity:1; transform:none; }
     #fvOverlay.in .sim-card { opacity:1; transform:none; }
+    #agOverlay.in .sim-card { opacity:1; transform:none; }
     @media (prefers-reduced-motion:reduce) { #simOverlay, .sim-card { transition-duration:.01s; } }
     @media (prefers-reduced-motion:reduce) { #fvOverlay, .sim-card { transition-duration:.01s; } }
+    @media (prefers-reduced-motion:reduce) { #agOverlay, .sim-card { transition-duration:.01s; } }
     #simOverlay button { margin:0; }
     #fvOverlay button { margin:0; }
+    #agOverlay button { margin:0; }
     #simOverlay label { display:inline-flex; align-items:center; gap:6px; margin:0; }
     #fvOverlay label { display:inline-flex; align-items:center; gap:6px; margin:0; }
+    #agOverlay label { display:inline-flex; align-items:center; gap:6px; margin:0; }
     #simOverlay input[type=checkbox] { width:auto; }
     #fvOverlay input[type=checkbox] { width:auto; }
+    #agOverlay input[type=checkbox] { width:auto; }
     .sim-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
     .sim-head h2 { margin:0; font-size:20px; flex:1; }
     #simState { font-size:12px; color:var(--sub); }
@@ -117,6 +126,7 @@
     @media(max-width:860px) { .sim-body { grid-template-columns:minmax(0,var(--w)); justify-content:center; } .sim-right { max-height:none; overflow:visible; padding-right:0; } }
     @media(max-width:600px) { #simOverlay { padding:8px; } .sim-card { padding:12px; max-height:calc(var(--vh) - 16px); } .srow { grid-template-columns:84px 1fr 50px; } }
     @media(max-width:600px) { #fvOverlay { padding:8px; } .sim-card { padding:12px; max-height:calc(var(--vh) - 16px); } .srow { grid-template-columns:84px 1fr 50px; } }
+    @media(max-width:600px) { #agOverlay { padding:8px; } .sim-card { padding:12px; max-height:calc(var(--vh) - 16px); } .srow { grid-template-columns:84px 1fr 50px; } }
 
     /* ===== Tab utama & Watch Face Creator ===== */
     [hidden] { display:none !important; }
@@ -143,6 +153,18 @@
     #fvOpen { margin:0 0 0 auto; padding:8px 14px; font-size:13px; }
     #fvClose { color:var(--text); background:#303b42; }
     #fvClose kbd { margin-left:6px; padding:1px 5px; font:11px ui-monospace, monospace; color:var(--sub); border:1px solid var(--line); border-radius:4px; }
+    #agOpen { margin:0 0 0 auto; padding:10px 16px; font-size:14px; }
+    #agClose { color:var(--text); background:#303b42; }
+    #agClose kbd { margin-left:6px; padding:1px 5px; font:11px ui-monospace, monospace; color:var(--sub); border:1px solid var(--line); border-radius:4px; }
+    #agLog { height:min(52vh,480px); overflow:auto; padding:10px; background:#0d1215; border:1px solid var(--line); border-radius:10px; }
+    .agm { padding:8px 12px; border-radius:10px; margin:0 0 8px; max-width:90%; white-space:pre-wrap; word-break:break-word; font-size:13px; line-height:1.5; }
+    .agm.user { margin-left:auto; background:#24424a; }
+    .agm.ai { background:#1b2227; border:1px solid var(--line); }
+    .agm.err { background:#2a1513; border:1px solid var(--warn); color:var(--warn); }
+    .agm .vbtn { display:block; margin-top:8px; }
+    .agin { display:flex; gap:8px; align-items:flex-end; margin-top:10px; }
+    .agin textarea { min-height:64px; }
+    #agMode { color:var(--accent); }
     /* ===== Editor visual watch face ===== */
     #vSec h3 { margin:14px 0 6px; font-size:14px; }
     #vPal { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
@@ -172,6 +194,7 @@
   <div class="mtabs" role="tablist">
     <div class="mtab active" data-main="app" role="tab">Editor Aplikasi/Game</div>
     <div class="mtab" data-main="face" role="tab">Editor Watch Face</div>
+    <button type="button" id="agOpen">✨ AI Agent</button>
   </div>
   <div id="panelApp">
   <p>Isi kolom secara manual atau (opsional) impor dari paket ZIP. Tombol unggah aktif otomatis jika semua kolom terisi dan lolos verifikasi.</p>
@@ -296,6 +319,20 @@
     <p style="text-align:center; margin-top:20px; font-size:13px;">Memuat data...</p>
   </div>
 </aside>
+
+<div id="agOverlay" role="dialog" aria-modal="true" aria-labelledby="agTitle" aria-hidden="true">
+  <div class="sim-card" style="width:min(760px,100%)">
+    <div class="sim-head">
+      <h2 id="agTitle">AI Agent · <span id="agMode"></span></h2>
+      <span id="agState"></span>
+      <button type="button" id="agReset" class="vbtn">Reset</button>
+      <button type="button" id="agClose">✕ Tutup<kbd>Esc</kbd></button>
+    </div>
+    <div id="agLog" aria-live="polite"></div>
+    <div class="agin"><textarea id="agIn" placeholder=""></textarea><button type="button" id="agSend">Kirim</button></div>
+    <p class="hint">Enter = kirim, Shift+Enter = baris baru. Isi editor saat ini ikut dikirim sebagai konteks. Hasil yang lolos verifikasi otomatis dibungkus menjadi paket ZIP dan mengisi semua kolom.</p>
+  </div>
+</div>
 
 <div id="fvOverlay" role="dialog" aria-modal="true" aria-labelledby="fvTitle" aria-hidden="true">
   <div class="sim-card" style="width:min(620px,100%)">
@@ -2764,6 +2801,129 @@ string.dump = nil
     openB.addEventListener("click", openFv); $("fvClose").addEventListener("click", closeFv);
     ov.addEventListener("pointerdown", e => { if (e.target === ov) closeFv(); });
     document.addEventListener("keydown", e => { if (open && e.key === "Escape") { e.preventDefault(); closeFv(); } });
+  })();
+
+  // ======================================================================
+  // ===== AI Agent (Gemini lewat /api/agent; kunci di env var "API") =====
+  // ======================================================================
+  (() => {
+    const AGENT_URL = "/api/agent", GUIDES = { app: "LUA-PROGRAMMING-GUIDE.md", face: "WATCHFACE-DSL-GUIDE.md" }, MAXFIX = 2;
+    const LABEL = { app: "Aplikasi/Game (Lua)", face: "Watch Face (DSL)" };
+    const HINT = { app: "Contoh: buat game snake dengan skor dan ikon ular…", face: "Contoh: buat watch face analog dengan tanggal dan baterai…" };
+    const hist = { app: [], face: [] }, view = { app: [], face: [] }, guides = {};
+    let busy = false;
+    const mode = () => document.querySelector(".mtab.active").dataset.main;
+    const log = $("agLog"), ov = $("agOverlay"), openB = $("agOpen"), ID = /^[A-Za-z0-9_-]{1,24}$/;
+
+    function addView(m, cls, text, zip) {
+      const it = { cls, text, zip }; view[m].push(it); if (m === mode()) paint(it);
+    }
+    function paint(it) {
+      const d = document.createElement("div"); d.className = "agm " + it.cls; d.textContent = it.text;
+      if (it.zip) {
+        const b = document.createElement("button"); b.type = "button"; b.className = "vbtn"; b.textContent = "Unduh " + it.zip.name;
+        b.onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(it.zip); a.download = it.zip.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
+        d.appendChild(b);
+      }
+      log.appendChild(d); log.scrollTop = log.scrollHeight;
+    }
+    function render() {
+      const m = mode(); $("agMode").textContent = LABEL[m]; $("agIn").placeholder = HINT[m];
+      log.innerHTML = ""; view[m].forEach(paint);
+      if (!view[m].length) paint({ cls: "ai", text: `Mode aktif: ${LABEL[m]}. Panduan ${GUIDES[m]} dikirim otomatis ke AI. Jelaskan apa yang ingin dibuat.` });
+    }
+
+    function problems(m, o) {
+      const e = [], v = k => String(o[k] ?? "").trim();
+      if (!ID.test(v("id"))) e.push("id must match [A-Za-z0-9_-]{1,24}");
+      if (!v("name") || v("name").length > 32) e.push("name is required, max 32 chars");
+      if (!v("version") || v("version").length > 12) e.push("version is required, max 12 chars");
+      if (!v("description") || v("description").length > 120) e.push("description is required, max 120 chars");
+      if (m === "face") {
+        if (!FACE.TAGS.includes(o.tag)) e.push("tag must be one of " + FACE.TAGS.join(", "));
+        FACE.analyze(String(o.dsl || "")).diags.filter(d => d.sev === "error").slice(0, 10).forEach(d => e.push(`dsl line ${d.line}: ${d.msg}`));
+      } else {
+        if (!["app", "game"].includes(o.type)) e.push('type must be "app" or "game"');
+        const th = checkThumb(v("thumbnail")); if (!th.ok) e.push("thumbnail: " + th.msg);
+        const lu = checkLua(String(o.code || ""));
+        if (!lu.ok) { const ds = (lu.diags || []).filter(d => d.sev === "error").slice(0, 10); if (ds.length) ds.forEach(d => e.push(`lua line ${d.line}: ${d.msg}`)); else e.push("lua: " + lu.msg); }
+      }
+      return e;
+    }
+    async function pack(m, o) {
+      const zip = new JSZip(), v = k => String(o[k] ?? "").trim();
+      let rec;
+      if (m === "face") {
+        const dsl = String(o.dsl).replace(/\r\n?/g, "\n").replace(/\n+$/, "");
+        rec = { id: v("id"), name: v("name"), tag: o.tag, version: v("version"), description: v("description"), dsl: FACE.analyze(dsl).canon };
+        zip.file("record.json", JSON.stringify(rec, null, 2) + "\n"); zip.file("face.dsl", dsl + "\n");
+      } else {
+        const th = v("thumbnail").replace(/\s+/g, "").toUpperCase(), code = String(o.code);
+        rec = { id: v("id"), name: v("name"), type: o.type, version: v("version"), thumbnail: th, description: v("description"), code };
+        zip.file("record.json", JSON.stringify(rec, null, 2) + "\n"); zip.file("thumbnail.hex", th + "\n"); zip.file("main.lua", code);
+      }
+      const blob = await zip.generateAsync({ type: "blob" }), file = new File([blob], rec.id + ".zip", { type: "application/zip" });
+      await (m === "face" ? readFacePackage(file) : readPackage(file)); // isi semua kolom lewat jalur impor ZIP yang sama
+      return file;
+    }
+    async function call(m, msgs) {
+      const r = await fetch(AGENT_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: m, guide: guides[m], messages: msgs }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      return j;
+    }
+
+    async function send() {
+      const text = $("agIn").value.trim(); if (!text || busy) return;
+      const m = mode(); $("agIn").value = ""; busy = true; $("agSend").disabled = true;
+      addView(m, "user", text);
+      try {
+        if (!guides[m]) {
+          $("agState").textContent = "Memuat panduan…";
+          const r = await fetch(GUIDES[m]);
+          if (!r.ok) throw new Error(`${GUIDES[m]} tidak ditemukan (HTTP ${r.status}). Letakkan di folder yang sama dengan halaman ini.`);
+          guides[m] = await r.text();
+        }
+        const cur = (m === "face" ? fEditor.getValue() : editor.getValue()).slice(0, 16000);
+        const msgs = [...hist[m].slice(-8), { role: "user", text: `${text}\n\n[Current editor content]\n${cur}` }];
+        for (let n = 0; ; n++) {
+          $("agState").textContent = n ? `Memperbaiki (${n}/${MAXFIX})…` : "AI bekerja…";
+          const o = await call(m, msgs), raw = JSON.stringify(o);
+          if (!o.ready) { addView(m, "ai", o.reply || "(tanpa balasan)"); hist[m].push({ role: "user", text }, { role: "model", text: raw }); break; }
+          const errs = problems(m, o);
+          if (!errs.length) {
+            $("agState").textContent = "Membungkus paket…";
+            const file = await pack(m, o);
+            addView(m, "ai", `${o.reply || ""}\n\n✓ Paket "${file.name}" dibuat dan semua kolom terisi (verifikasi lulus). Tutup jendela ini untuk melihat dan mengunggah.`, file);
+            hist[m].push({ role: "user", text }, { role: "model", text: raw }); break;
+          }
+          if (n >= MAXFIX) { addView(m, "err", "Hasil AI belum lolos verifikasi, kolom tidak diubah:\n- " + errs.join("\n- ") + "\nCoba perjelas permintaan."); break; }
+          msgs.push({ role: "model", text: raw }, { role: "user", text: "Automatic validation failed:\n- " + errs.join("\n- ") + "\nReturn the complete corrected output." });
+        }
+      } catch (e) { addView(m, "err", "Gagal: " + e.message); }
+      finally { busy = false; $("agSend").disabled = false; $("agState").textContent = ""; $("agIn").focus(); }
+    }
+
+    // ---------- Overlay ----------
+    const bg = () => document.querySelectorAll("body > main, body > aside");
+    let open = false, closing = false, ct = 0;
+    function openAg() {
+      if (open) return; open = true; closing = false; clearTimeout(ct); render();
+      ov.classList.add("show"); ov.setAttribute("aria-hidden", "false"); void ov.offsetWidth; ov.classList.add("in");
+      bg().forEach(el => el.setAttribute("inert", "")); document.documentElement.style.overflow = "hidden"; $("agIn").focus({ preventScroll: true });
+    }
+    function closeAg() {
+      if (!open || closing) return; closing = true; ov.classList.remove("in");
+      ct = setTimeout(() => {
+        ov.classList.remove("show"); ov.setAttribute("aria-hidden", "true"); bg().forEach(el => el.removeAttribute("inert"));
+        document.documentElement.style.overflow = ""; open = closing = false; openB.focus({ preventScroll: true });
+      }, 280);
+    }
+    openB.addEventListener("click", openAg); $("agClose").addEventListener("click", closeAg); $("agSend").addEventListener("click", send);
+    $("agReset").addEventListener("click", () => { if (busy) return; const m = mode(); hist[m] = []; view[m] = []; render(); });
+    $("agIn").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+    ov.addEventListener("pointerdown", e => { if (e.target === ov) closeAg(); });
+    document.addEventListener("keydown", e => { if (open && e.key === "Escape") { e.preventDefault(); closeAg(); } });
   })();
 
   fValidate();
