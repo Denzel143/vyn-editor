@@ -342,6 +342,80 @@
       #agOpen { flex:1 1 100%; }
       #simEntry { padding:12px 16px; }
     }
+
+    /* ===================================================================
+       Mode fokus editor visual: begitu seluruh kanvas OLED masuk layar,
+       editor "menjepret" jadi satu layar penuh. Scroll lagi (naik/turun)
+       sampai kanvas mulai keluar layar -> kembali ke halaman semula.
+       Ponsel/portrait : kanvas di atas, panel bawah berganti tab
+                         (Elemen | Lapisan | Properti), semuanya muat satu layar.
+       Landscape/desktop: dua kolom, semua panel terlihat bersamaan.
+       =================================================================== */
+    html { scrollbar-gutter:stable; }
+    .vfhead, .vptabs { display:none; }
+    #vSec.vfocus {
+      --fh:var(--vv-h, 100dvh);
+      --cvh:clamp(104px, calc(var(--fh) - 410px), calc(var(--fh) * .42));
+      position:fixed; left:0; right:0; top:var(--vv-top, 0px); height:var(--fh); z-index:40; margin:0;
+      padding:max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+      background:var(--card); overflow:hidden; overflow:clip; overscroll-behavior:none; touch-action:none; user-select:none;
+      display:grid; gap:8px; align-content:stretch;
+      grid-template-columns:minmax(0,1fr);
+      grid-template-rows:auto auto auto auto auto auto minmax(0,1fr);
+      grid-template-areas:"head" "cv" "info" "tool" "opts" "tabs" "panel";
+    }
+    #vSec.vfocus input, #vSec.vfocus textarea, #vSec.vfocus select { user-select:text; }
+    #vSec.vfocus .vfhead { grid-area:head; display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:32px; }
+    #vSec.vfocus .vfhead h3 { margin:0; font-size:15px; }
+    #vSec.vfocus #vfClose { margin:0; padding:6px 14px; min-height:32px; }
+    #vSec.vfocus #vCv { grid-area:cv; justify-self:center; width:min(100%, calc(var(--cvh) * 148 / 84)); height:auto; aspect-ratio:148 / 84; max-width:none; touch-action:none; }
+    #vSec.vfocus .fctl { margin:0; gap:5px 12px; }
+    #vSec.vfocus .vinfo { grid-area:info; font-size:11px; min-height:0; gap:2px 10px; justify-content:center; }
+    #vSec.vfocus .vinfo span:empty { display:none; }
+    #vSec.vfocus .vtool { grid-area:tool; }
+    #vSec.vfocus .vtool .vbtn { flex:1 1 auto; min-height:32px; padding:5px 8px; font-size:12px; }
+    #vSec.vfocus .vopts { grid-area:opts; justify-content:center; }
+    #vSec.vfocus .vopts label { min-height:24px; font-size:11px; gap:5px; }
+    #vSec.vfocus .vopts .vx { display:none; }
+    #vSec.vfocus .vptabs { grid-area:tabs; display:grid; grid-template-columns:repeat(3, 1fr); gap:4px; padding:3px; background:#11171a; border:1px solid var(--line); border-radius:10px; }
+    #vSec.vfocus .vptabs button { margin:0; min-height:34px; padding:6px 4px; font-size:12px; color:var(--sub); background:transparent; border-radius:7px; touch-action:manipulation; }
+    #vSec.vfocus .vptabs button.on { color:#09201d; background:var(--accent); }
+    #vSec.vfocus #vPal, #vSec.vfocus .vcols { grid-area:panel; min-height:0; margin:0; }
+    #vSec.vfocus #vPal { display:grid; grid-template-columns:repeat(auto-fill, minmax(84px, 1fr)); gap:6px; align-content:start; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; }
+    #vSec.vfocus .vp { width:auto; padding:5px 4px; }
+    #vSec.vfocus .vth { height:34px; }
+    #vSec.vfocus .vth canvas { object-fit:contain; max-width:100%; max-height:100%; }
+    #vSec.vfocus .vcols { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
+    #vSec.vfocus .vcols > div { display:flex; flex-direction:column; min-height:0; }
+    #vSec.vfocus .vcols h3 { display:none; margin:0 0 4px; font-size:12px; color:var(--sub); font-weight:600; }
+    #vSec.vfocus #vLayers, #vSec.vfocus #vInsp { flex:1 1 auto; min-height:0; max-height:none; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; }
+    #vSec.vfocus #vLayers li { padding:6px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #vSec.vfocus .vgrid { grid-template-columns:minmax(0,.9fr) minmax(0,1fr); gap:5px 8px; }
+    #vSec.vfocus .vgrid input, #vSec.vfocus .vgrid select { min-width:0; }
+    /* Tab panel bawah (mode portrait/ponsel) */
+    #vSec.vfocus[data-ptab="pal"] .vcols { display:none; }
+    #vSec.vfocus:not([data-ptab="pal"]) #vPal { display:none; }
+    #vSec.vfocus[data-ptab="ls"] .vcols > div:last-child { display:none; }
+    #vSec.vfocus[data-ptab="insp"] .vcols > div:first-child { display:none; }
+
+    /* Landscape / layar lebar: dua kolom, semua panel tampil */
+    @media (min-width:700px) and (min-aspect-ratio:7/6) {
+      #vSec.vfocus {
+        --cvh:calc(var(--fh) - 210px);
+        column-gap:14px;
+        grid-template-columns:minmax(0,1.3fr) minmax(300px,1fr);
+        grid-template-rows:auto auto auto auto auto minmax(0,1fr);
+        grid-template-areas:"head head" "cv pal" "tool ls" "opts ls" "info ls" ". ls";
+      }
+      #vSec.vfocus .vptabs { display:none; }
+      #vSec.vfocus .vinfo { justify-content:flex-start; }
+      #vSec.vfocus .vopts { justify-content:flex-start; }
+      #vSec.vfocus .vopts .vx { display:inline; }
+      #vSec.vfocus[data-ptab] #vPal { display:grid; align-self:stretch; contain:size; min-height:0; grid-template-columns:repeat(auto-fill, minmax(92px, 1fr)); }
+      #vSec.vfocus[data-ptab] .vcols { display:grid; grid-template-columns:minmax(96px,.8fr) minmax(0,1.4fr); }
+      #vSec.vfocus[data-ptab] .vcols > div { display:flex; }
+      #vSec.vfocus .vcols h3 { display:block; }
+    }
   </style>
 </head>
 <body>
@@ -416,22 +490,24 @@
             <label>DSL watch face</label>
             <div id="fEditor"></div>
         </div>
-        <div id="vSec" hidden>
+        <div id="vSec" data-ptab="pal" hidden>
+          <div class="vfhead"><h3>Editor visual</h3><button type="button" class="vbtn" id="vfClose">Tutup</button></div>
           <div id="vPal"></div>
           <canvas id="vCv" tabindex="0" aria-label="Kanvas editor visual OLED 128×64"></canvas>
-          <div class="fctl">
+          <div class="fctl vtool">
             <button type="button" class="vbtn" id="vUndo">↶ Urungkan</button><button type="button" class="vbtn" id="vRedo">↷ Ulangi</button>
             <button type="button" class="vbtn" id="vDup">Gandakan</button><button type="button" class="vbtn" id="vDel">Hapus</button>
             <button type="button" class="vbtn" id="vUp">▲ Ke atas</button><button type="button" class="vbtn" id="vDn">▼ Ke bawah</button>
             <button type="button" class="vbtn" id="vClr">Kosongkan</button>
           </div>
-          <div class="fctl">
-            <label><input type="checkbox" id="vFrz" checked> Bekukan jam 10:10:30</label>
-            <label><input type="checkbox" id="vGrid"> Grid 8 px</label>
-            <label><input type="checkbox" id="vGuide" checked> Panduan tengah</label>
-            <label><input type="checkbox" id="vDot" checked> Gaya piksel OLED</label>
+          <div class="fctl vopts">
+            <label><input type="checkbox" id="vFrz" checked> Bekukan jam<span class="vx"> 10:10:30</span></label>
+            <label><input type="checkbox" id="vGrid"> Grid<span class="vx"> 8 px</span></label>
+            <label><input type="checkbox" id="vGuide" checked> Panduan<span class="vx"> tengah</span></label>
+            <label><input type="checkbox" id="vDot" checked> Gaya piksel<span class="vx"> OLED</span></label>
           </div>
-          <div class="fctl"><span id="vCnt"></span><span id="vPos"></span><span id="vNote" style="color:#e8c15a"></span></div>
+          <div class="fctl vinfo"><span id="vCnt"></span><span id="vPos"></span><span id="vNote" style="color:#e8c15a"></span></div>
+          <div class="vptabs" role="tablist"><button type="button" data-p="pal" class="on">Elemen</button><button type="button" data-p="ls">Lapisan</button><button type="button" data-p="insp">Properti</button></div>
           <div class="vcols">
             <div><h3>Lapisan</h3><ul id="vLayers"></ul></div>
             <div><h3>Properti</h3><div id="vInsp"></div></div>
@@ -2970,6 +3046,96 @@ string.dump = nil
     openB.addEventListener("click", openFv); $("fvClose").addEventListener("click", closeFv);
     ov.addEventListener("pointerdown", e => { if (e.target === ov) closeFv(); });
     document.addEventListener("keydown", e => { if (open && e.key === "Escape") { e.preventDefault(); closeFv(); } });
+  })();
+
+
+  // ======================================================================
+  // ===== Mode fokus editor visual (satu layar penuh) =====
+  // ======================================================================
+  (() => {
+    const vs = $("vSec"), cvEl = $("vCv"), root = document.documentElement, reduce = matchMedia("(prefers-reduced-motion:reduce)");
+    let on = false, busy = false, armed = true, spacer = null, info = null, off = 0, slack = 56, idle = 0, raf = 0, lastSel = null;
+    const vh = () => window.visualViewport ? visualViewport.height : innerHeight;
+    const eligible = () => !$("panelFace").hidden && !vs.hidden && !root.classList.contains("kb-open")
+      && !document.querySelector("#simOverlay.show, #fvOverlay.show, #agOverlay.show, dialog[open]");
+    const fully = () => { const r = cvEl.getBoundingClientRect(); return r.width > 0 && r.top >= 0 && r.bottom <= vh() && r.left >= 0 && r.right <= innerWidth + 1; };
+    const clipOf = (r, L) => `inset(${Math.max(0, r.top - L.top)}px ${Math.max(0, L.right - r.right)}px ${Math.max(0, L.bottom - r.bottom)}px ${Math.max(0, r.left - L.left)}px round 12px)`;
+    const FULL = "inset(0px round 0px)";
+    const run = (from, to, f0, f1) => new Promise(res => {
+      if (reduce.matches) return res(null);
+      const a = vs.animate([{ clipPath: from, opacity: f0 }, { opacity: 1, offset: .5 }, { clipPath: to, opacity: f1 }], { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)", fill: "forwards" });
+      a.onfinish = a.oncancel = () => res(a);
+    });
+
+    async function enter() {
+      on = busy = true; armed = false; off = 0;
+      const r = vs.getBoundingClientRect(), c = cvEl.getBoundingClientRect();
+      info = { cvTop: c.top - r.top, cvH: c.height };
+      spacer = document.createElement("div"); spacer.className = "vspacer"; spacer.style.height = r.height + "px";
+      vs.parentNode.insertBefore(spacer, vs.nextSibling);
+      root.style.overflow = "hidden";
+      vs.classList.add("vfocus");
+      const L = vs.getBoundingClientRect();
+      slack = Math.min(72, Math.max(40, cvEl.getBoundingClientRect().top - L.top));
+      const a = await run(clipOf(r, L), FULL, 0, 1); if (a) a.cancel();
+      busy = false;
+    }
+
+    async function exit(dir) {
+      if (!on || busy) return;
+      busy = true; clearTimeout(idle); vs.style.transition = "none";
+      if (dir) {
+        // lanjutkan scroll ke arah yang sama sampai kanvas sebagian keluar layar (supaya tidak langsung masuk fokus lagi)
+        const t = spacer.getBoundingClientRect().top + info.cvTop, pad = info.cvH * .2;
+        scrollBy({ top: dir > 0 ? t + pad : t + info.cvH - vh() - pad, behavior: "instant" });
+      }
+      const r = spacer.getBoundingClientRect(), L = vs.getBoundingClientRect();
+      const a = await run(FULL, clipOf(r, L), 1, 0);
+      vs.classList.remove("vfocus"); vs.style.transform = ""; vs.style.transition = "";
+      spacer.remove(); spacer = null; root.style.overflow = "";
+      if (a) a.cancel();
+      on = busy = false; off = 0;
+      armed = !(eligible() && fully());
+    }
+
+    // Masuk otomatis saat seluruh kanvas terlihat (dipicu scroll pengguna)
+    const check = () => { raf = 0; if (on || busy) return; if (!eligible() || !fully()) { armed = true; return; } if (armed) enter(); };
+    addEventListener("scroll", () => { if (!raf) raf = requestAnimationFrame(check); }, { passive: true });
+
+    // Scroll virtual di dalam mode fokus: layar mengikuti jari/roda lalu kembali; melewati ambang -> keluar
+    const scrollable = t => { for (let n = t; n && n !== vs; n = n.parentElement) { const o = getComputedStyle(n).overflowY; if ((o === "auto" || o === "scroll") && n.scrollHeight > n.clientHeight + 1) return true; } return false; };
+    function release() { if (!on || busy) return; off = 0; vs.style.transition = "transform .24s cubic-bezier(.2,.8,.2,1)"; vs.style.transform = ""; }
+    function nudge(d) {
+      clearTimeout(idle); off += d; vs.style.transition = "none"; vs.style.transform = `translateY(${-off}px)`;
+      if (Math.abs(off) >= slack) { exit(off > 0 ? 1 : -1); return; }
+      idle = setTimeout(release, 160);
+    }
+    vs.addEventListener("wheel", e => {
+      if (!on || busy || e.ctrlKey || scrollable(e.target)) return;
+      e.preventDefault(); nudge(e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * vh() : e.deltaY);
+    }, { passive: false });
+    let ty = null, moved = 0;
+    vs.addEventListener("touchstart", e => { ty = null; moved = 0; if (!on || busy || e.touches.length !== 1 || e.target.closest("#vCv") || scrollable(e.target)) return; ty = e.touches[0].clientY; }, { passive: true });
+    vs.addEventListener("touchmove", e => {
+      if (ty == null || !on || busy) return;
+      const y = e.touches[0].clientY, d = ty - y; ty = y; moved += Math.abs(d);
+      if (moved < 8) return;
+      if (e.cancelable) e.preventDefault(); nudge(d);
+    }, { passive: false });
+    vs.addEventListener("touchend", () => { ty = null; release(); });
+    vs.addEventListener("touchcancel", () => { ty = null; release(); });
+
+    // Tutup manual (tombol / Esc): tetap di posisi halaman semula
+    $("vfClose").addEventListener("click", () => exit(0));
+    document.addEventListener("keydown", e => { if (on && e.key === "Escape") { e.preventDefault(); exit(0); } });
+    addEventListener("resize", () => { if (on) { const L = vs.getBoundingClientRect(); slack = Math.min(72, Math.max(40, cvEl.getBoundingClientRect().top - L.top)); } });
+
+    // Panel bawah (ponsel): Elemen | Lapisan | Properti
+    const setP = p => { vs.dataset.ptab = p; vs.querySelectorAll(".vptabs button").forEach(b => b.classList.toggle("on", b.dataset.p === p)); };
+    vs.querySelector(".vptabs").addEventListener("click", e => { const b = e.target.closest("button[data-p]"); if (b) setP(b.dataset.p); });
+    const curSel = () => { const li = $("vLayers").querySelector("li.on"); return li ? li.dataset.i : null; };
+    cvEl.addEventListener("pointerup", () => setTimeout(() => { const c = curSel(); if (on && c != null && c !== lastSel) setP("insp"); lastSel = c; }, 0));
+    $("vLayers").addEventListener("click", () => { if (on) { setP("insp"); lastSel = curSel(); } });
   })();
 
   // ======================================================================
