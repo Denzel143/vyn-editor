@@ -419,6 +419,20 @@
       #vSec.vfocus[data-ptab] .vcols > div { display:flex; }
       #vSec.vfocus .vcols h3 { display:block; }
     }
+
+    /* ===== Tombol & dialog bersihkan area kerja ===== */
+    .btn-clear { color:var(--warn); }
+    #clearConfirm button[value="yes"] { color:#2a0805; background:var(--warn); }
+
+    /* ===== AI Agent: kartu jadi kolom flex. Log mengisi sisa ruang yang terlihat,
+       kolom input selalu menempel di bawah area terlihat (di atas keyboard virtual) ===== */
+    #agOverlay .sim-card { display:flex; flex-direction:column; overflow:hidden; }
+    #agOverlay .sim-head { flex:none; }
+    #agOverlay #agLog { flex:1 1 min(52vh, 480px); min-height:0; height:auto; max-height:none; }
+    #agOverlay .agin { flex:none; }
+    #agOverlay .agin textarea { max-height:min(40dvh, calc(var(--vv-h, 100dvh) * .3)); }
+    html.kb-open #agOverlay .sim-card { padding-bottom:12px; }
+    html.kb-open #agOverlay .agin textarea { min-height:48px; }
   </style>
 </head>
 <body>
@@ -455,6 +469,7 @@
       <ul id="checks"></ul>
       <div class="grid">
         <button id="upload" type="submit" disabled>Unggah ke Firebase RTDB</button>
+        <button id="clearApp" type="button" class="btn-ghost btn-clear">Bersihkan area kerja</button>
       </div>
       <div id="status" role="status" aria-live="polite"></div>
     </form>
@@ -525,6 +540,7 @@
           <button id="fUpload" type="submit" disabled>Unggah ke Firebase RTDB</button>
           <button id="fZip" type="button" class="btn-ghost" disabled>Unduh paket ZIP</button>
         </div>
+        <button id="fClear" type="button" class="btn-ghost btn-clear">Bersihkan area kerja</button>
         <div id="fStatus" role="status" aria-live="polite"></div>
       </form>
     </section>
@@ -629,6 +645,16 @@
     </div>
   </form>
 </dialog>
+<dialog id="clearConfirm">
+  <form method="dialog">
+    <h2>Bersihkan area kerja?</h2>
+    <p id="clearConfirmMessage"></p>
+    <div class="grid">
+      <button type="submit" value="no">Batal</button>
+      <button type="submit" value="yes">Ya, bersihkan</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.js"></script>
@@ -699,6 +725,14 @@
   const confirmUpdate = message => new Promise(resolve => {
     const dialog = $("updateConfirm");
     $("updateConfirmMessage").textContent = message;
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "yes"), { once: true });
+    dialog.showModal();
+  });
+
+  const confirmClear = message => new Promise(resolve => {
+    const dialog = $("clearConfirm");
+    $("clearConfirmMessage").textContent = message;
+    dialog.returnValue = "";
     dialog.addEventListener("close", () => resolve(dialog.returnValue === "yes"), { once: true });
     dialog.showModal();
   });
@@ -1516,6 +1550,16 @@
     status(`${file.name} dimuat.`);
   }
 
+  $("clearApp").addEventListener("click", async () => {
+    if (!(await confirmClear("Semua isian (ID, nama, versi, deskripsi, ZIP, thumbnail) dan kode Lua akan dikosongkan. Tindakan ini tidak dapat dibatalkan."))) return;
+    $("form").reset();
+    $("version").value = "1.0.0";
+    $("packageFile").value = "";
+    editor.setValue("", -1);
+    drawThumb("");
+    status("");
+    validate();
+  });
   $("packageFile").addEventListener("change", async event => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1767,7 +1811,7 @@ string.dump = nil
       for (let i = 0; i < 4; i++) if (padDown[i] && !next[i]) { padDown[i] = false; guard(() => call("on_touch", i + 1, false)); }
       for (let i = 0; i < 4; i++) if (!padDown[i] && next[i]) { padDown[i] = true; const t = vtime(); guard(() => call("on_touch", i + 1, true)); if (running) gesture(i, t); }
     };
-    const haptic = () => { try { if (navigator.vibrate) navigator.vibrate(40); } catch {} };   // haptic tiap detent encoder (perangkat yang mendukung Vibration API)
+    const haptic = () => { try { if (navigator.vibrate) navigator.vibrate(35); } catch {} };   // haptic tiap detent encoder (perangkat yang mendukung Vibration API)
     const encoderStep = s => { touchAct(); beep(1500, 7, .03, "square"); haptic(); guard(() => call("on_encoder", s)); };
     const setSw = down => {
       if (swDown === down) return; swDown = down; touchAct(); $("knobCap").classList.toggle("down", down);
@@ -2680,6 +2724,16 @@ string.dump = nil
     fValidate();
     fStatus(`${file.name} dimuat.`);
   }
+  $("fClear").addEventListener("click", async () => {
+    if (!(await confirmClear("Semua isian (ID, nama, versi, deskripsi, ZIP) dan DSL watch face, termasuk isi editor visual, akan dikosongkan. Tindakan ini tidak dapat dibatalkan."))) return;
+    $("fForm").reset();
+    $("fVersion").value = "1.0.0";
+    $("fPackage").value = "";
+    fEditor.setValue("", -1);
+    fStatus("");
+    fValidate();
+    fDraw();
+  });
   $("fPackage").addEventListener("change", async e => {
     const file = e.target.files?.[0];
     if (!file) return;
