@@ -3101,9 +3101,21 @@ string.dump = nil
       armed = !(eligible() && fully());
     }
 
-    // Masuk otomatis saat seluruh kanvas terlihat (dipicu scroll pengguna)
-    const check = () => { raf = 0; if (on || busy) return; if (!eligible() || !fully()) { armed = true; return; } if (armed) enter(); };
-    addEventListener("scroll", () => { if (!raf) raf = requestAnimationFrame(check); }, { passive: true });
+    // Masuk hanya jika scroll BERHENTI saat seluruh kanvas terlihat. Scroll cepat yang sekadar melewati kanvas diabaikan,
+    // dan berhenti di posisi kanvas belum masuk penuh juga tidak memicu apa-apa.
+    const SETTLE = 160;
+    let settleT = 0, touching = false;
+    const track = () => { raf = 0; if (!on && !busy && (!eligible() || !fully())) armed = true; };   // aktifkan ulang begitu kanvas tidak penuh
+    const settled = () => { settleT = 0; if (on || busy || touching) return; if (!eligible() || !fully()) { armed = true; return; } if (armed) enter(); };
+    addEventListener("scroll", () => {
+      if (on || busy) return;
+      if (!raf) raf = requestAnimationFrame(track);
+      clearTimeout(settleT); settleT = setTimeout(settled, SETTLE);
+    }, { passive: true });
+    // jari masih menempel = belum berhenti; setelah dilepas, tunggu apakah ada momentum scroll
+    addEventListener("touchstart", () => { touching = true; clearTimeout(settleT); settleT = 0; }, { passive: true });
+    const lift = () => { touching = false; if (!on && !busy) { clearTimeout(settleT); settleT = setTimeout(settled, SETTLE); } };
+    addEventListener("touchend", lift, { passive: true }); addEventListener("touchcancel", lift, { passive: true });
 
     // Scroll virtual di dalam mode fokus: layar mengikuti jari/roda lalu kembali; melewati ambang -> keluar
     const scrollable = t => { for (let n = t; n && n !== vs; n = n.parentElement) { const o = getComputedStyle(n).overflowY; if ((o === "auto" || o === "scroll") && n.scrollHeight > n.clientHeight + 1) return true; } return false; };
