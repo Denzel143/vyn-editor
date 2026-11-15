@@ -1767,7 +1767,7 @@ string.dump = nil
       for (let i = 0; i < 4; i++) if (padDown[i] && !next[i]) { padDown[i] = false; guard(() => call("on_touch", i + 1, false)); }
       for (let i = 0; i < 4; i++) if (!padDown[i] && next[i]) { padDown[i] = true; const t = vtime(); guard(() => call("on_touch", i + 1, true)); if (running) gesture(i, t); }
     };
-    const haptic = () => { try { if (navigator.vibrate) navigator.vibrate(25); } catch {} };   // haptic tiap detent encoder (perangkat yang mendukung Vibration API)
+    const haptic = () => { try { if (navigator.vibrate) navigator.vibrate(50); } catch {} };   // haptic tiap detent encoder (perangkat yang mendukung Vibration API)
     const encoderStep = s => { touchAct(); beep(1500, 7, .03, "square"); haptic(); guard(() => call("on_encoder", s)); };
     const setSw = down => {
       if (swDown === down) return; swDown = down; touchAct(); $("knobCap").classList.toggle("down", down);
