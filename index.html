@@ -627,7 +627,7 @@
         </div>
         <div class="sensors" id="simSensors"></div>
         <label for="simStore" style="margin-top:14px">Data storage (JSON)</label>
-        <textarea id="simStore" spellcheck="false">{"highscore":"120","name":"VYN"}</textarea>
+        <textarea id="simStore" spellcheck="false">{"highscore":120,"name":"VYN"}</textarea>
         <button type="button" id="simStoreApply">Terapkan</button>
         <pre id="simLog"></pre>
       </div>
@@ -1632,9 +1632,9 @@
   });
 
   // ===== Simulator VynWatch (Lua 5.4 via wasmoon; API mengikuti chatbox_esp32s3.ino + verifikator) =====
-  // CATATAN: app_lua.cpp tidak ikut di .ino, jadi bentuk nilai kembalian di bawah adalah turunan dari kode penghubung di .ino:
-  // imu.angle() = x(pitch), y(yaw), z(roll) dalam derajat; imu.accel() = x(kanan), y(atas), z(keluar layar) dalam g; keduanya float.
-  // device.time() = 7 integer: hari(1=Sen..7=Min), tanggal, bulan, tahun, jam, menit, detik; nil bila belum sinkron.
+  // Mengikuti app_lua.cpp: imu.angle() = x(pitch), y(yaw), z(roll) dalam derajat; imu.accel() = x(kanan), y(atas), z(keluar layar) dalam g; keduanya float.
+  // device.time() = TABEL {weekday(1=Sen..7=Min), day, month, year, hour, minute, second}; nil bila belum sinkron.
+  // storage.* bertipe seperti firmware: integer / float32 / boolean / string dikembalikan dengan tipe aslinya; set() -> true, remove() -> apakah kunci ada.
   // Fungsi host dipasang sebagai global "__h_*" lalu diambil ke tabel lokal H (lebih cepat daripada proxy objek) dan dihapus dari _G.
   const LUA_PRELUDE = `
 local H = {}
@@ -1643,6 +1643,7 @@ for k in pairs(H) do _G["__h_" .. k] = nil end
 local load, type, tostring, tonumber, select, concat = load, type, tostring, tonumber, select, table.concat
 function __run(src) local f, e = load(src, "=app", "t"); if not f then error(e, 0) end f() end
 function __call(name, ...) local f = _G[name]; if type(f) ~= "function" then return false end f(...); return true end
+local mtype = math.type
 local function numstr(v) if type(v) == "number" then return tostring(v) end return v end   -- seperti lua_tolstring: 3.0 -> "3.0"
 local text, rect, circle = H.text, H.rect, H.circle
 screen = {
@@ -1655,15 +1656,15 @@ screen = {
   width = function() return 128 end, height = function() return 64 end }
 input = { touch = H.touch, sw = H.sw, millis = H.millis }
 storage = {
-  get = function(k) local v = H.sget(numstr(k)); return v end,
-  set = function(k, v) local t = type(v); if t == "number" or t == "boolean" then v = tostring(v) end H.sset(numstr(k), v) end,
-  remove = function(k) H.sdel(numstr(k)) end }
+  get = function(k) k = numstr(k); local v = H.sget(k); if v ~= nil and H.sgett(k) == "f" then v = v + 0.0 end return v end,
+  set = function(k, v) local t = type(v); return H.sset(numstr(k), v, t == "number" and mtype(v) or t) end,
+  remove = function(k) return H.sdel(numstr(k)) end }
 sound = { buzzer = H.buzzer }
 imu = { angle = function() return tonumber(H.imu(1)), tonumber(H.imu(2)), tonumber(H.imu(3)) end,
         accel = function() return tonumber(H.imu(4)), tonumber(H.imu(5)), tonumber(H.imu(6)) end }
 device = { battery = H.battery, temperature = function() return tonumber(H.temp()) end,
   time = function() local w = H.time(1); if w == nil then return nil end
-    return w, H.time(2), H.time(3), H.time(4), H.time(5), H.time(6), H.time(7) end }
+    return { weekday = w, day = H.time(2), month = H.time(3), year = H.time(4), hour = H.time(5), minute = H.time(6), second = H.time(7) } end }
 rgb = { set = function(r, g, b) H.rgb(r, g, b) end, auto = function() H.rgbAuto() end }
 mic = { level = H.mic }
 app = { id = H.appid, name = H.appname, keep_alive = H.keep }
@@ -1695,7 +1696,7 @@ string.dump = nil
 
     // ---------- OLED SSD1306 128x64: port Adafruit_SSD1306 + Adafruit_GFX (font klasik 5x7 glcdfont, sel 6x8) ----------
     const FONT = new Uint8Array("000000000000005f00000007000700147f147f14242a7f2a12231308646236495620500008070300001c2241000041221c002a1c7f1c2a08083e080800807030000808080808000060600020100804023e5149453e00427f400072494949462141494d331814127f1027454545393c4a49493141211109073649494936464949291e0000140000004034000000081422411414141414004122140802015909063e415d594e7c1211127c7f494949363e414141227f4141413e7f494949417f090909013e414151737f0808087f00417f41002040413f017f081422417f404040407f021c027f7f0408107f3e4141413e7f090909063e4151215e7f09192946264949493203017f01033f4040403f1f2040201f3f4038403f631408146303047804036159494d43007f4141410204081020004141417f04020102044040404040000307080020545478407f284444383844444428384444287f385454541800087e090218a4a49c787f0804047800447d40002040403d007f1028440000417f40007c047804787c080404783844444438fc1824241818242418fc7c08040408485454542404043f44243c4040207c1c2040201c3c4030403c44281028444c9090907c4464544c440008364100000077000000413608000201020402".match(/../g).map(h => parseInt(h, 16)));   // glcdfont.c, ASCII 32..126 (5 byte/karakter, bit0 = baris atas)
-    const I = v => v !== v ? 0 : Math.max(-32768, Math.min(32767, Math.trunc(v)));   // cast ke int16 seperti C (NaN -> 0, tak hingga dijepit)
+    const I = v => Math.max(-32768, Math.min(32767, Math.trunc(v)));            // cast ke int16 seperti C
     const px = (x, y) => { if (x >= 0 && x < W && y >= 0 && y < H) fb[y * W + x] = 1; };
     const hl = (x, y, w) => { if (y < 0 || y >= H) return; for (let i = Math.max(x, 0), e = Math.min(x + w, W); i < e; i++) fb[y * W + i] = 1; };
     const vl = (x, y, h) => { if (x < 0 || x >= W) return; for (let j = Math.max(y, 0), e = Math.min(y + h, H); j < e; j++) fb[j * W + x] = 1; };
@@ -1737,10 +1738,10 @@ string.dump = nil
     };
     const text = (x, y, s) => {                      // setCursor(x,y) + print(): ukuran 1, putih, wrap MATI (firmware: display.setTextWrap(false)); teks lewat tepi terpotong
       let cx = I(x), cy = I(y);
-      for (let i = 0; i < s.length && i < 120; i++) {
-        const c = s.charCodeAt(i);
-        if (c === 10) { cx = 0; cy += 8; continue; }
-        if (c === 13 || c < 32 || c > 126) continue;
+      for (let i = 0, n = 0; i < s.length && n < 120; i++) {   // firmware: byte >= 0x80 dibuang, kontrol/0x7f jadi spasi, maks 120 karakter
+        let c = s.charCodeAt(i);
+        if (c >= 128) continue;
+        n++; if (c < 32 || c === 127) c = 32;
         if (cx < W && cy < H && cx + 5 >= 0 && cy + 7 >= 0)
           for (let k = 0; k < 5; k++) { let col = FONT[(c - 32) * 5 + k]; for (let j = 0; j < 8; j++, col >>= 1) if (col & 1) px(cx + k, cy + j); }
         cx += 6;
@@ -1798,9 +1799,16 @@ string.dump = nil
     { const d = new Date(); $("simTimeVal").value = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; }
 
     // ---------- Storage dummy ----------
+    // Nilai disimpan bertipe: { t: "i" integer | "f" float32 | "b" boolean | "s" string, v } (seperti kodifikasi i/f/b/s di firmware)
     let store = {};
-    const storeLoad = () => { try { const o = JSON.parse($("simStore").value || "{}"); store = {}; for (const [k, v] of Object.entries(o)) store[k] = String(v); say("Storage dummy diterapkan."); } catch (e) { say("JSON storage tidak valid: " + e.message, true); } };
-    const storeShow = () => { $("simStore").value = JSON.stringify(store); };
+    const storeLoad = () => { try { const o = JSON.parse($("simStore").value || "{}"); store = {}; for (const [k, v] of Object.entries(o)) {
+      if (typeof v === "string") store[k] = { t: "s", v };
+      else if (typeof v === "boolean") store[k] = { t: "b", v };
+      else if (typeof v === "number" && Number.isInteger(v)) store[k] = { t: "i", v: v | 0 };
+      else if (typeof v === "number" && isFinite(Math.fround(v))) store[k] = { t: "f", v: Math.fround(v) };
+      else say(`Storage: nilai "${k}" dilewati (hanya string, angka, atau boolean).`, true);
+    } say("Storage dummy diterapkan."); } catch (e) { say("JSON storage tidak valid: " + e.message, true); } };
+    const storeShow = () => { $("simStore").value = JSON.stringify(Object.fromEntries(Object.entries(store).map(([k, e]) => [k, e.v]))); };
     storeLoad();
 
     // ---------- Input hardware ----------
@@ -1920,33 +1928,33 @@ string.dump = nil
     ["pointerup", "pointercancel"].forEach(t => cap.addEventListener(t, () => setSw(false)));
 
     // ---------- Host API untuk Lua ----------
-    // Angka NaN/tak hingga (mis. pembagian 0 atau sqrt negatif saat menghitung tabrakan) tetap angka bagi Lua dan tidak membuat
-    // luaL_checknumber gagal di perangkat; jadi di sini hanya diberi peringatan sekali, bukan menghentikan program.
-    const warnedNF = new Set();
-    const N = (v, fn, i) => {
-      const n = typeof v === "number" ? v : (typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
-      if (typeof v !== "number" && !isFinite(n)) throw new Error(`argumen ke-${i} ${fn} harus angka`);
-      if (!isFinite(n) && !warnedNF.has(fn + i)) {
-        warnedNF.add(fn + i);
-        say(`⚠ ${fn}: argumen ke-${i} bernilai ${n} (biasanya pembagian 0 atau sqrt negatif). Diperlakukan seperti cast C; periksa hitungan tabrakan/posisi Anda.`, true);
-      }
-      return n;
-    };
+    const N = (v, fn, i) => { const n = typeof v === "number" ? v : (typeof v === "string" && v.trim() !== "" ? Number(v) : NaN); if (!isFinite(n)) throw new Error(`argumen ke-${i} ${fn} harus angka`); return n; };
+    // Firmware menjepit (constrain) semua argumen gambar, bukan memotongnya: x 0..127, y 12..63 (12 baris atas = header), w 0..128, h 0..64, r 0..32
+    const Q = (v, lo, hi) => Math.min(hi, Math.max(lo, Math.trunc(v)));
     const Sx = (v, fn, i) => { if (typeof v === "string") return v; if (typeof v === "number") return String(v); throw new Error(`argumen ke-${i} ${fn} harus string`); };
     const host = () => ({
       appid: $("id").value.trim(), appname: $("name").value.trim(),
-      text: (x, y, s) => text(N(x, "screen.text", 1), N(y, "screen.text", 2), Sx(s, "screen.text", 3)),
-      line: (a, b, c, d) => line(N(a, "screen.line", 1), N(b, "screen.line", 2), N(c, "screen.line", 3), N(d, "screen.line", 4)),
-      rect: (x, y, w, hh, f) => rectP(N(x, "screen.rect", 1), N(y, "screen.rect", 2), N(w, "screen.rect", 3), N(hh, "screen.rect", 4), f),
-      circle: (x, y, r, f) => circ(N(x, "screen.circle", 1), N(y, "screen.circle", 2), N(r, "screen.circle", 3), f),
-      touch: p => { p = Math.trunc(N(p, "input.touch", 1)); return p >= 1 && p <= 4 ? padDown[p - 1] : false; },
+      text: (x, y, s) => text(Q(N(x, "screen.text", 1), 0, 127), Q(N(y, "screen.text", 2), 12, 63), Sx(s, "screen.text", 3)),
+      line: (a, b, c, d) => line(Q(N(a, "screen.line", 1), 0, 127), Q(N(b, "screen.line", 2), 12, 63), Q(N(c, "screen.line", 3), 0, 127), Q(N(d, "screen.line", 4), 12, 63)),
+      rect: (x, y, w, hh, f) => rectP(Q(N(x, "screen.rect", 1), 0, 127), Q(N(y, "screen.rect", 2), 12, 63), Q(N(w, "screen.rect", 3), 0, 128), Q(N(hh, "screen.rect", 4), 0, 64), f),
+      circle: (x, y, r, f) => circ(Q(N(x, "screen.circle", 1), 0, 127), Q(N(y, "screen.circle", 2), 12, 63), Q(N(r, "screen.circle", 3), 0, 32), f),
+      touch: p => { p = N(p, "input.touch", 1); return p >= 1 && p <= 4 ? padDown[p - 1] : false; },
       sw: () => swDown, millis: () => Math.floor(performance.now() - t0) >>> 0,
-      sget: k => { k = Sx(k, "storage.get", 1); return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : undefined; },
-      sset: (k, v) => { k = Sx(k, "storage.set", 1); if (typeof v === "boolean") v = String(v); store[k] = Sx(v, "storage.set", 2); storeShow(); },
-      sdel: k => { delete store[Sx(k, "storage.remove", 1)]; storeShow(); },
+      sget: k => { k = Sx(k, "storage.get", 1); return Object.prototype.hasOwnProperty.call(store, k) ? store[k].v : undefined; },
+      sgett: k => Object.prototype.hasOwnProperty.call(store, k) ? store[k].t : undefined,
+      sset: (k, v, kind) => {
+        k = Sx(k, "storage.set", 1);
+        if (kind === "string") store[k] = { t: "s", v: String(v) };
+        else if (kind === "boolean") store[k] = { t: "b", v: !!v };
+        else if (kind === "integer") store[k] = { t: "i", v: v | 0 };   // firmware: (long) 32-bit
+        else if (kind === "float") { const f = Math.fround(v); if (!isFinite(f)) throw new Error("argumen ke-2 storage.set: angka harus terbatas (bukan NaN/tak hingga)"); store[k] = { t: "f", v: f }; }
+        else throw new Error("argumen ke-2 storage.set: nilai harus string, angka, atau boolean");
+        storeShow(); return true;
+      },
+      sdel: k => { k = Sx(k, "storage.remove", 1); const had = Object.prototype.hasOwnProperty.call(store, k); delete store[k]; storeShow(); return had; },
       buzzer: (f, d) => {
         f = N(f, "sound.buzzer", 1); d = N(d, "sound.buzzer", 2);
-        if (!(f >= 100 && f <= 10000 && d >= 1 && d <= 2000)) return;   // di luar rentang (termasuk NaN): diabaikan
+        if (f < 100 || f > 10000 || d < 1 || d > 2000) return;
         beep(f, d, .05); $("buzTxt").textContent = `Buzzer: ${Math.round(f)} Hz, ${Math.round(d)} ms`;
       },
       imu: imuAt,   // string ber-desimal -> Lua tonumber() = float, seperti float firmware
@@ -2019,7 +2027,7 @@ string.dump = nil
       const code = editor.getValue(), c = checkLua(code);
       if (!c.ok) { say("✗ Verifikasi gagal, tidak dijalankan: " + c.msg, true); return; }
       try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); } catch (e) {}
-      stop(true); const my = runId; logEl.textContent = ""; warnedNF.clear(); setState(""); loader.start();
+      stop(true); const my = runId; logEl.textContent = ""; setState(""); loader.start();
       try {
         const f = await loadLua(p => { if (my === runId) loader.set(p); });
         if (my !== runId) return;
@@ -2048,6 +2056,7 @@ string.dump = nil
       raf = requestAnimationFrame(frame);
       if (ts - lastF < 33) return;
       lastF = ts; fb.fill(0);
+      text(2, 2, $("name").value.trim()); hl(0, 10, W);   // appLuaDraw(): nama aplikasi + garis header, lalu draw()
       if ($("simDev").checked && ts - lastAct > 120000) { say("Tidak ada interaksi 120 dtk: program ditutup (panggil app.keep_alive() agar tetap berjalan)."); stop(); return; }
       const t1 = performance.now();
       try { if (call("draw") === false) throw new Error("draw() tidak ditemukan"); } catch (e) { fail(e); return; }
