@@ -789,7 +789,7 @@
           <span class="item-id">${esc(id)}${isFace && data.tag ? ' · ' + esc(data.tag) : ''}</span>
         </div>
         <div class="item-actions">
-          ${isFace ? `<button type="button" class="btn-load" data-id="${esc(id)}">Muat</button>` : ''}
+          <button type="button" class="btn-load" data-id="${esc(id)}">Muat</button>
           <button type="button" class="btn-delete" data-path="${path}" data-id="${esc(id)}" data-name="${esc(data.name)}">Hapus</button>
         </div>
       `;
@@ -801,7 +801,9 @@
     const b = e.target.closest(".btn-delete");
     if (b) { deleteItem(b.dataset.path, b.dataset.id, b.dataset.name); return; }
     const l = e.target.closest(".btn-load");
-    if (l) fLoadRecord({ id: l.dataset.id, ...(facesData[l.dataset.id] || {}) });
+    if (!l) return;
+    if (currentTab === 'face') fLoadRecord({ id: l.dataset.id, ...(facesData[l.dataset.id] || {}) });
+    else appLoadRecord({ id: l.dataset.id, ...(appsData[l.dataset.id] || {}) });
   });
 
   // Fetch data in realtime
@@ -1548,6 +1550,21 @@
     editor.setValue(code, -1);
     validate();
     status(`${file.name} dimuat.`);
+  }
+
+  // Muat app/game dari Firebase RTDB ke area kerja
+  function appLoadRecord(rec) {
+    $("id").value = rec.id || "";
+    $("type").value = rec.type === "app" ? "app" : "game";
+    $("name").value = rec.name || "";
+    $("version").value = rec.version || "1.0.0";
+    $("description").value = rec.description || "";
+    $("thumbnail").value = rec.thumbnail || "";
+    $("packageFile").value = "";
+    editor.setValue(String(rec.code || ""), -1);
+    setMainTab("app");
+    validate();
+    status(`"${rec.name || rec.id}" dimuat.`);
   }
 
   $("clearApp").addEventListener("click", async () => {
