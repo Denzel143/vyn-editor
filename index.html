@@ -311,6 +311,7 @@
     .stab { padding:7px 13px; font-size:13px; }
     #fvOpen { display:block; width:100%; margin:14px 0 0; padding:11px 14px; background:#2a353c; color:var(--text); border:1px solid var(--line); }
     #fvOpen:hover { background:#34424a; filter:none; }
+    #editorCard { margin-top:22px; padding-top:18px; border-top:1px solid var(--line); }
     #editorCard .stabs { margin:0 0 4px; }
 
     /* Entri simulator: satu baris ringkas */
@@ -389,47 +390,9 @@
   </div>
 
   <div id="panelFace" hidden>
-    <section id="editorCard">
-    <div class="stabs" role="tablist">
-      <div class="stab active" data-sub="text" role="tab">Editor teks</div>
-      <div class="stab" data-sub="visual" role="tab">Editor visual</div>
-    </div>
-    <div id="tabText">
-        <div class="grid">
-          <div><label for="fPackage">Impor ZIP</label><input id="fPackage" type="file" accept=".zip,application/zip"></div>
-          <div><label for="fExample">Contoh</label><select id="fExample"><option value="">Pilih contoh</option></select></div>
-        </div>
-        <label>DSL watch face</label>
-        <div id="fEditor"></div>
-    </div>
-    <div id="vSec" hidden>
-      <div id="vPal"></div>
-      <canvas id="vCv" tabindex="0" aria-label="Kanvas editor visual OLED 128×64"></canvas>
-      <div class="fctl">
-        <button type="button" class="vbtn" id="vUndo">↶ Urungkan</button><button type="button" class="vbtn" id="vRedo">↷ Ulangi</button>
-        <button type="button" class="vbtn" id="vDup">Gandakan</button><button type="button" class="vbtn" id="vDel">Hapus</button>
-        <button type="button" class="vbtn" id="vUp">▲ Ke atas</button><button type="button" class="vbtn" id="vDn">▼ Ke bawah</button>
-        <button type="button" class="vbtn" id="vClr">Kosongkan</button>
-      </div>
-      <div class="fctl">
-        <label><input type="checkbox" id="vFrz" checked> Bekukan jam 10:10:30</label>
-        <label><input type="checkbox" id="vGrid"> Grid 8 px</label>
-        <label><input type="checkbox" id="vGuide" checked> Panduan tengah</label>
-        <label><input type="checkbox" id="vDot" checked> Gaya piksel OLED</label>
-      </div>
-      <div class="fctl"><span id="vCnt"></span><span id="vPos"></span><span id="vNote" style="color:#e8c15a"></span></div>
-      <div class="vcols">
-        <div><h3>Lapisan</h3><ul id="vLayers"></ul></div>
-        <div><h3>Properti</h3><div id="vInsp"></div></div>
-      </div>
-    </div>
-    </section>
-
-    <button type="button" id="fvOpen">Buka pratinjau</button>
-
     <section>
-      <h2>Identitas</h2>
       <form id="fForm" novalidate>
+        <h2>Identitas</h2>
         <div class="grid">
           <div><label for="fId">ID unik</label><input id="fId" maxlength="24" placeholder="face_minimal_01"></div>
           <div><label for="fTag">Kategori</label><select id="fTag"></select></div>
@@ -440,6 +403,42 @@
         </div>
         <label for="fDesc">Deskripsi singkat</label>
         <input id="fDesc" maxlength="120">
+        <div id="editorCard">
+        <div class="stabs" role="tablist">
+          <div class="stab active" data-sub="text" role="tab">Editor teks</div>
+          <div class="stab" data-sub="visual" role="tab">Editor visual</div>
+        </div>
+        <div id="tabText">
+            <div class="grid">
+              <div><label for="fPackage">Impor ZIP</label><input id="fPackage" type="file" accept=".zip,application/zip"></div>
+              <div><label for="fExample">Contoh</label><select id="fExample"><option value="">Pilih contoh</option></select></div>
+            </div>
+            <label>DSL watch face</label>
+            <div id="fEditor"></div>
+        </div>
+        <div id="vSec" hidden>
+          <div id="vPal"></div>
+          <canvas id="vCv" tabindex="0" aria-label="Kanvas editor visual OLED 128×64"></canvas>
+          <div class="fctl">
+            <button type="button" class="vbtn" id="vUndo">↶ Urungkan</button><button type="button" class="vbtn" id="vRedo">↷ Ulangi</button>
+            <button type="button" class="vbtn" id="vDup">Gandakan</button><button type="button" class="vbtn" id="vDel">Hapus</button>
+            <button type="button" class="vbtn" id="vUp">▲ Ke atas</button><button type="button" class="vbtn" id="vDn">▼ Ke bawah</button>
+            <button type="button" class="vbtn" id="vClr">Kosongkan</button>
+          </div>
+          <div class="fctl">
+            <label><input type="checkbox" id="vFrz" checked> Bekukan jam 10:10:30</label>
+            <label><input type="checkbox" id="vGrid"> Grid 8 px</label>
+            <label><input type="checkbox" id="vGuide" checked> Panduan tengah</label>
+            <label><input type="checkbox" id="vDot" checked> Gaya piksel OLED</label>
+          </div>
+          <div class="fctl"><span id="vCnt"></span><span id="vPos"></span><span id="vNote" style="color:#e8c15a"></span></div>
+          <div class="vcols">
+            <div><h3>Lapisan</h3><ul id="vLayers"></ul></div>
+            <div><h3>Properti</h3><div id="vInsp"></div></div>
+          </div>
+        </div>
+        </div>
+        <button type="button" id="fvOpen">Buka pratinjau</button>
         <ul id="fChecks"></ul>
         <label for="fCanon">DSL hasil normalisasi</label>
         <textarea id="fCanon" readonly spellcheck="false"></textarea>
