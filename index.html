@@ -408,7 +408,10 @@
         grid-template-areas:"head head" "cv pal" "tool ls" "opts ls" "info ls" ". ls";
       }
       #vSec.vfocus .vptabs { display:none; }
+      #vSec.vfocus #vPal { grid-area:pal; }
+      #vSec.vfocus .vcols { grid-area:ls; }
       #vSec.vfocus .vinfo { justify-content:flex-start; }
+      #vSec.vfocus #vCv { justify-self:start; }
       #vSec.vfocus .vopts { justify-content:flex-start; }
       #vSec.vfocus .vopts .vx { display:inline; }
       #vSec.vfocus[data-ptab] #vPal { display:grid; align-self:stretch; contain:size; min-height:0; grid-template-columns:repeat(auto-fill, minmax(92px, 1fr)); }
