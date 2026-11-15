@@ -280,12 +280,19 @@
       #agOverlay #agLog { flex:1 1 auto; height:auto; min-height:0; }
       #agOverlay .agin { flex:none; margin-top:8px; }
       #agOverlay .agin textarea { min-height:48px; max-height:30dvh; }
-      #agOverlay .agin button { min-height:48px; padding:0 18px; }
+      #agOverlay .agin button { width:48px; height:48px; min-height:48px; padding:0; }
       #agOverlay .hint { flex:none; margin:6px 0 0; }
       html.kb-open #agOverlay .hint { display:none; }
       #agTitle { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     }
 
+    #agSend { flex:none; display:grid; place-items:center; width:44px; height:44px; min-height:44px; padding:0; border-radius:50%; transition:background .15s, color .15s, transform .08s; }
+    #agSend:active { transform:scale(.92); }
+    #agSend .i-stop { display:none; }
+    #agSend[data-state=stop] { background:var(--warn); color:#2a0805; }
+    #agSend[data-state=stop] .i-send { display:none; }
+    #agSend[data-state=stop] .i-stop { display:block; }
+    #agSend:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
     @media (max-height:480px) and (orientation:landscape) {
       #agLog { height:max(96px, calc(var(--vh) - 190px)); }
       .sim-card { padding:10px; }
@@ -433,7 +440,7 @@
       <button type="button" id="agClose">✕ Tutup<kbd>Esc</kbd></button>
     </div>
     <div id="agLog" aria-live="polite"></div>
-    <div class="agin"><textarea id="agIn" placeholder=""></textarea><button type="button" id="agSend">Kirim</button></div>
+    <div class="agin"><textarea id="agIn" placeholder=""></textarea><button type="button" id="agSend" data-state="send" aria-label="Kirim" title="Kirim (Enter)"><svg class="i-send" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><svg class="i-stop" viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg></button></div>
     <p class="hint">Enter = kirim, Shift+Enter = baris baru. Isi editor saat ini ikut dikirim sebagai konteks. Hasil yang lolos verifikasi otomatis dibungkus menjadi paket ZIP dan mengisi semua kolom.</p>
   </div>
 </div>
@@ -2944,7 +2951,8 @@ string.dump = nil
     const LABEL = { app: "Aplikasi/Game (Lua)", face: "Watch Face (DSL)" };
     const HINT = { app: "Contoh: buat game snake dengan skor dan ikon ular…", face: "Contoh: buat watch face analog dengan tanggal dan baterai…" };
     const hist = { app: [], face: [] }, view = { app: [], face: [] }, guides = {};
-    let busy = false;
+    let busy = false, ctl = null;
+    const setBusy = b => { busy = b; const el = $("agSend"); el.dataset.state = b ? "stop" : "send"; el.setAttribute("aria-label", b ? "Hentikan respons" : "Kirim"); el.title = b ? "Hentikan respons" : "Kirim (Enter)"; };
     const mode = () => document.querySelector(".mtab.active").dataset.main;
     const log = $("agLog"), ov = $("agOverlay"), openB = $("agOpen"), ID = /^[A-Za-z0-9_-]{1,24}$/;
 
@@ -3036,8 +3044,8 @@ string.dump = nil
         fail() { d.querySelectorAll(".agr.act").forEach(r => { r.className = "agr bad"; }); }
       };
     }
-    async function call(m, msgs, onText) {
-      const r = await fetch(AGENT_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: m, guide: guides[m], messages: msgs }) });
+    async function call(m, msgs, onText, signal) {
+      const r = await fetch(AGENT_URL, { signal, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: m, guide: guides[m], messages: msgs }) });
       if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || `HTTP ${r.status}`); }
       const rd = r.body.getReader(), dec = new TextDecoder(); let buf = "", acc = "";
       const take = ln => {
@@ -3057,12 +3065,12 @@ string.dump = nil
 
     async function send() {
       const text = $("agIn").value.trim(); if (!text || busy) return;
-      const m = mode(); $("agIn").value = ""; busy = true; $("agSend").disabled = true;
+      const m = mode(); $("agIn").value = ""; setBusy(true); ctl = new AbortController(); const sig = ctl.signal;
       addView(m, "user", text);
       try {
         if (!guides[m]) {
           $("agState").textContent = "Memuat panduan…";
-          const r = await fetch(GUIDES[m]);
+          const r = await fetch(GUIDES[m], { signal: sig });
           if (!r.ok) throw new Error(`${GUIDES[m]} tidak ditemukan (HTTP ${r.status}). Letakkan di folder yang sama dengan halaman ini.`);
           guides[m] = await r.text();
         }
@@ -3072,13 +3080,15 @@ string.dump = nil
           $("agState").textContent = n ? `Perbaikan ${n}/${MAXFIX}…` : "AI bekerja…";
           const P = progress(m, n ? `Perbaikan otomatis ${n}/${MAXFIX}` : "Membuat paket");
           let raw, o;
-          try { raw = await call(m, msgs, P.feed); o = JSON.parse(raw); }
-          catch (e) { P.fail(); throw new Error(e instanceof SyntaxError ? "Respons AI terpotong atau bukan JSON valid. Coba kirim ulang." : e.message); }
+          try { raw = await call(m, msgs, P.feed, sig); o = JSON.parse(raw); }
+          catch (e) { P.fail(); if (e.name === "AbortError" || sig.aborted) throw e; throw new Error(e instanceof SyntaxError ? "Respons AI terpotong atau bukan JSON valid. Coba kirim ulang." : e.message); }
+          if (sig.aborted) { P.fail(); break; }
           P.fieldsDone(); P.step(0);
           const errs = problems(m, o);
           if (!errs.length) {
             let file;
             try { file = await pack(m, o, P.step); } catch (e) { P.fail(); throw e; }
+            if (sig.aborted) break;
             P.end();
             addView(m, "ai", `✓ Paket "${file.name}" dibuat dan semua kolom terisi (verifikasi lulus). Tutup jendela ini untuk melihat dan mengunggah.`, file);
             hist[m].push({ role: "user", text }, { role: "model", text: raw }); break;
@@ -3087,8 +3097,10 @@ string.dump = nil
           if (n >= MAXFIX) { addView(m, "err", "Hasil AI belum lolos verifikasi, kolom tidak diubah:\n- " + errs.join("\n- ") + "\nCoba perjelas permintaan."); break; }
           msgs.push({ role: "model", text: raw }, { role: "user", text: "Automatic validation failed:\n- " + errs.join("\n- ") + "\nReturn the complete corrected output." });
         }
-      } catch (e) { addView(m, "err", "Gagal: " + e.message); }
-      finally { busy = false; $("agSend").disabled = false; $("agState").textContent = ""; if (!matchMedia("(pointer:coarse)").matches || document.activeElement === document.body) $("agIn").focus({ preventScroll: true }); }
+      } catch (e) { if (e.name !== "AbortError" && !sig.aborted) addView(m, "err", "Gagal: " + e.message); }
+      finally { const stopped = sig.aborted; ctl = null; setBusy(false); $("agState").textContent = "";
+        if (stopped) { addView(m, "ai", "Respons dihentikan. Pesanmu dikembalikan ke kolom input."); if (!$("agIn").value) $("agIn").value = text; }
+        if (!matchMedia("(pointer:coarse)").matches || document.activeElement === document.body) $("agIn").focus({ preventScroll: true }); }
     }
 
     // ---------- Overlay ----------
@@ -3107,7 +3119,7 @@ string.dump = nil
       }, 280);
     }
     $("agSend").addEventListener("mousedown", e => e.preventDefault());
-    openB.addEventListener("click", openAg); $("agClose").addEventListener("click", closeAg); $("agSend").addEventListener("click", send);
+    openB.addEventListener("click", openAg); $("agClose").addEventListener("click", closeAg); $("agSend").addEventListener("click", () => { if (busy) { $("agState").textContent = "Menghentikan…"; ctl?.abort(); } else send(); });
     $("agReset").addEventListener("click", () => { if (busy) return; const m = mode(); hist[m] = []; view[m] = []; render(); });
     $("agIn").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
     ov.addEventListener("pointerdown", e => { if (e.target === ov) closeAg(); });
