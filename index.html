@@ -59,34 +59,16 @@
     }
   
     /* ===== Simulator VynWatch (overlay) ===== */
-    #simOverlay { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; padding:16px; --vh:100vh; background:rgba(5,8,10,0); backdrop-filter:blur(0); overscroll-behavior:contain; transition:background .26s ease, backdrop-filter .26s ease; }
-    #fvOverlay { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; padding:16px; --vh:100vh; background:rgba(5,8,10,0); backdrop-filter:blur(0); overscroll-behavior:contain; transition:background .26s ease, backdrop-filter .26s ease; }
-    #agOverlay { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; padding:16px; --vh:100vh; background:rgba(5,8,10,0); backdrop-filter:blur(0); overscroll-behavior:contain; transition:background .26s ease, backdrop-filter .26s ease; }
-    #simOverlay.show { display:flex; }
-    #fvOverlay.show { display:flex; }
-    #agOverlay.show { display:flex; }
-    @supports (height:100dvh) { #simOverlay { --vh:100dvh; } }
-    @supports (height:100dvh) { #fvOverlay { --vh:100dvh; } }
-    @supports (height:100dvh) { #agOverlay { --vh:100dvh; } }
-    #simOverlay.in { background:rgba(5,8,10,.8); backdrop-filter:blur(4px); }
-    #fvOverlay.in { background:rgba(5,8,10,.8); backdrop-filter:blur(4px); }
-    #agOverlay.in { background:rgba(5,8,10,.8); backdrop-filter:blur(4px); }
+    #simOverlay, #fvOverlay, #agOverlay { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; padding:16px; --vh:100vh; background:rgba(5,8,10,0); backdrop-filter:blur(0); overscroll-behavior:contain; transition:background .26s ease, backdrop-filter .26s ease; }
+    #simOverlay.show, #fvOverlay.show, #agOverlay.show { display:flex; }
+    @supports (height:100dvh) { #simOverlay, #fvOverlay, #agOverlay { --vh:100dvh; } }
+    #simOverlay.in, #fvOverlay.in, #agOverlay.in { background:rgba(5,8,10,.8); backdrop-filter:blur(4px); }
     .sim-card { width:min(1060px,100%); max-height:calc(var(--vh) - 32px); overflow:auto; overscroll-behavior:contain; padding:16px; border:1px solid var(--line); border-radius:18px; background:var(--card); box-shadow:0 24px 80px #000a; opacity:0; transform:translateY(28px) scale(.96); transition:opacity .26s ease, transform .3s cubic-bezier(.2,.8,.2,1); }
-    #simOverlay.in .sim-card { opacity:1; transform:none; }
-    #fvOverlay.in .sim-card { opacity:1; transform:none; }
-    #agOverlay.in .sim-card { opacity:1; transform:none; }
-    @media (prefers-reduced-motion:reduce) { #simOverlay, .sim-card { transition-duration:.01s; } }
-    @media (prefers-reduced-motion:reduce) { #fvOverlay, .sim-card { transition-duration:.01s; } }
-    @media (prefers-reduced-motion:reduce) { #agOverlay, .sim-card { transition-duration:.01s; } }
-    #simOverlay button { margin:0; }
-    #fvOverlay button { margin:0; }
-    #agOverlay button { margin:0; }
-    #simOverlay label { display:inline-flex; align-items:center; gap:6px; margin:0; }
-    #fvOverlay label { display:inline-flex; align-items:center; gap:6px; margin:0; }
-    #agOverlay label { display:inline-flex; align-items:center; gap:6px; margin:0; }
-    #simOverlay input[type=checkbox] { width:auto; }
-    #fvOverlay input[type=checkbox] { width:auto; }
-    #agOverlay input[type=checkbox] { width:auto; }
+    #simOverlay.in .sim-card, #fvOverlay.in .sim-card, #agOverlay.in .sim-card { opacity:1; transform:none; }
+    @media (prefers-reduced-motion:reduce) { #simOverlay, #fvOverlay, #agOverlay, .sim-card { transition-duration:.01s; } }
+    #simOverlay button, #fvOverlay button, #agOverlay button { margin:0; }
+    #simOverlay label, #fvOverlay label, #agOverlay label { display:inline-flex; align-items:center; gap:6px; margin:0; }
+    #simOverlay input[type=checkbox], #fvOverlay input[type=checkbox], #agOverlay input[type=checkbox] { width:auto; }
     .sim-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
     .sim-head h2 { margin:0; font-size:20px; flex:1; }
     #simState { font-size:12px; color:var(--sub); }
@@ -125,9 +107,7 @@
     #simLog { height:110px; overflow:auto; margin:14px 0 0; padding:10px 12px; background:#11171a; border:1px solid var(--line); border-radius:10px; font:12px ui-monospace, monospace; color:var(--sub); }
     .sim-right { min-width:0; max-height:calc(var(--vh) - 130px); overflow:auto; padding-right:4px; overscroll-behavior:contain; }
     @media(max-width:860px) { .sim-body { grid-template-columns:minmax(0,var(--w)); justify-content:center; } .sim-right { max-height:none; overflow:visible; padding-right:0; } }
-    @media(max-width:600px) { #simOverlay { padding:8px; } .sim-card { padding:12px; max-height:calc(var(--vh) - 16px); } .srow { grid-template-columns:84px 1fr 50px; } }
-    @media(max-width:600px) { #fvOverlay { padding:8px; } .sim-card { padding:12px; max-height:calc(var(--vh) - 16px); } .srow { grid-template-columns:84px 1fr 50px; } }
-    @media(max-width:600px) { #agOverlay { padding:8px; } .sim-card { padding:12px; max-height:calc(var(--vh) - 16px); } .srow { grid-template-columns:84px 1fr 50px; } }
+    @media(max-width:600px) { #simOverlay, #fvOverlay, #agOverlay { padding:8px; } .sim-card { padding:12px; max-height:calc(var(--vh) - 16px); } .srow { grid-template-columns:84px 1fr 50px; } }
 
     /* ===== Tab utama & Watch Face Creator ===== */
     [hidden] { display:none !important; }
@@ -250,7 +230,6 @@
       #knob { width:min(170px, 44vw); }
       .vcols { grid-template-columns:1fr; }
       #vLayers { max-height:220px; }
-      #fvOverlay .sim-card { width:100% !important; }
       #fOled { max-width:none; }
     }
 
@@ -276,12 +255,6 @@
       .agl { min-width:92px; }
       .agm { max-width:94%; }
       /* AI Agent: layar penuh, log mengisi ruang, kolom input menempel di atas keyboard */
-      #agOverlay .sim-card { display:flex; flex-direction:column; overflow:hidden; }
-      #agOverlay #agLog { flex:1 1 auto; height:auto; min-height:0; }
-      #agOverlay .agin { flex:none; margin-top:8px; }
-      #agOverlay .agin textarea { min-height:48px; max-height:30dvh; }
-      #agOverlay .agin button { width:48px; height:48px; min-height:48px; padding:0; }
-      #agOverlay .hint { flex:none; margin:6px 0 0; }
       html.kb-open #agOverlay .hint { display:none; }
       #agTitle { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     }
@@ -297,6 +270,76 @@
       #agLog { height:max(96px, calc(var(--vh) - 190px)); }
       .sim-card { padding:10px; }
     }
+  
+    /* ===== Penyempurnaan tampilan ===== */
+    :root { --line2:#3a4850; --radius:12px; }
+    body { max-width:1180px; gap:20px; }
+    h1 { font-size:22px; font-weight:650; letter-spacing:-.01em; margin:0 0 14px; }
+    h2 { font-size:15px; font-weight:650; margin:0 0 4px; }
+    section { margin-top:14px; padding:18px 20px 20px; border-radius:var(--radius); }
+    section > h2 { margin-bottom:2px; }
+    aside { border-radius:var(--radius); padding:16px; }
+    aside h2 { font-size:16px; margin:0 0 12px; }
+    label { margin:14px 0 6px; font-size:12px; font-weight:500; letter-spacing:.01em; }
+    input, select, textarea { border-radius:9px; transition:border-color .15s, box-shadow .15s; }
+    input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(84,215,201,.18); }
+    input[type=file] { padding:9px 12px; }
+    button { border-radius:9px; transition:filter .15s, transform .08s, background .15s; }
+    button:not(:disabled):hover { filter:brightness(1.08); }
+    button:not(:disabled):active { transform:translateY(1px); }
+    button:disabled { opacity:.4; cursor:not-allowed; }
+    .btn-ghost, #simClose, #simStop, #simReset, #simStoreApply, #fvClose, #agClose, .vbtn, .btn-load { color:var(--text); background:#2a353c; }
+    .btn-ghost:not(:disabled):hover, #simClose:hover, #simStop:hover, #simReset:hover, #simStoreApply:hover, #fvClose:hover, #agClose:hover, .vbtn:hover, .btn-load:hover { background:#34424a; filter:none; }
+    .btn-delete { background:transparent; color:var(--warn); border:1px solid rgba(255,139,129,.35); }
+    .btn-delete:hover { background:rgba(255,139,129,.12); }
+    .grid > button { margin-top:20px; }
+    .grid:has(> #upload), .grid:has(> #fUpload) { grid-template-columns:1fr; }
+    .grid:has(> #fUpload) { grid-template-columns:1fr auto; gap:10px; }
+    #fZip { padding-left:20px; padding-right:20px; }
+    #status:empty, #fStatus:empty { min-height:0; margin-top:0; }
+    #status, #fStatus { font-size:13px; }
+    #checks:empty, #fChecks:empty { display:none; }
+    #checks, #fChecks { margin-top:14px; }
+    .hint { margin:6px 0 0; }
+
+    /* Tab utama */
+    .mtabs { gap:6px; margin:0 0 6px; align-items:center; padding:4px; background:#11171a; border:1px solid var(--line); border-radius:var(--radius); }
+    .mtab { padding:8px 14px; border:0; border-radius:8px; background:transparent; font-size:13px; }
+    .mtab:not(.active):hover { color:var(--text); background:#1b2227; }
+    #agOpen { margin:0 0 0 auto; padding:8px 14px; font-size:13px; background:#2a353c; color:var(--accent); }
+    #agOpen:hover { background:#34424a; filter:none; }
+    .stabs { margin-top:12px; }
+    .stab { padding:7px 13px; font-size:13px; }
+    #fvOpen { padding:7px 13px; background:#2a353c; color:var(--text); }
+
+    /* Entri simulator: satu baris ringkas */
+    #simEntry { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 20px; }
+    #simEntry h2 { margin:0; }
+    #simEntry button { margin:0; }
+
+    /* Sidebar */
+    .tabs { padding:4px; background:#11171a; border:1px solid var(--line); border-radius:10px; gap:4px; }
+    .tab { border:0; background:transparent; padding:7px; border-radius:7px; }
+    .tab:not(.active):hover { color:var(--text); background:#1b2227; }
+    .item { padding:10px 12px; transition:border-color .15s; }
+    .item:hover { border-color:var(--line2); }
+    .empty { text-align:center; margin:24px 0 0; font-size:13px; }
+
+    /* Overlay */
+    .sim-card { border-radius:var(--radius); }
+    .sim-head h2 { font-size:17px; }
+    #fvOverlay .fctl label { gap:8px; }
+    #simLog:empty { display:none; }
+    #simLog { margin-top:12px; }
+    dialog { border-radius:var(--radius); }
+    dialog h2 { font-size:17px; }
+
+    @media(max-width:850px) {
+      .mtabs { flex-wrap:wrap; }
+      .mtab { flex:1 1 0; }
+      #agOpen { flex:1 1 100%; }
+      #simEntry { padding:12px 16px; }
+    }
   </style>
 </head>
 <body>
@@ -305,11 +348,9 @@
   <div class="mtabs" role="tablist">
     <div class="mtab active" data-main="app" role="tab">Editor Aplikasi/Game</div>
     <div class="mtab" data-main="face" role="tab">Editor Watch Face</div>
-    <button type="button" id="agOpen">✨ AI Agent</button>
+    <button type="button" id="agOpen">AI Agent</button>
   </div>
   <div id="panelApp">
-  <p>Isi kolom secara manual atau (opsional) impor dari paket ZIP. Tombol unggah aktif otomatis jika semua kolom terisi dan lolos verifikasi.</p>
-
   <section>
     <h2>Identitas paket</h2>
     <form id="form" novalidate>
@@ -323,15 +364,13 @@
       </div>
       <label for="description">Deskripsi singkat</label>
       <input id="description" maxlength="120">
-      <label for="packageFile">Impor paket ZIP (opsional)</label>
+      <label for="packageFile">Impor ZIP</label>
       <input id="packageFile" type="file" accept=".zip,application/zip">
-      <p class="hint">Jika memakai ZIP, harus memiliki <code>record.json</code>, <code>thumbnail.hex</code>, dan <code>main.lua</code> di folder root.</p>
-      <label for="thumbnail">Thumbnail OLED 16×16 (64 digit hex, 32 byte, MSB-first per baris)</label>
-      <textarea id="thumbnail" placeholder="00003C7E... (tepat 64 digit hex)"></textarea>
+      <label for="thumbnail">Thumbnail 16×16 (hex)</label>
+      <textarea id="thumbnail" placeholder="00003C7E…"></textarea>
       <canvas id="thumbPreview" width="16" height="16"></canvas>
       
-      <label>Program Lua 5.4 (maksimum 16 KiB UTF-8)</label>
-      <!-- Kontainer ACE Editor -->
+      <label>Program Lua</label>
       <div id="codeEditor"></div>
       
       <ul id="checks"></ul>
@@ -344,14 +383,11 @@
 
   <section id="simEntry">
     <h2>Simulator VynWatch</h2>
-    <p class="hint">Jalankan program Lua di editor pada perangkat virtual: OLED 128×64, pad touch, encoder, dan sensor dummy.</p>
     <button type="button" id="simOpen">Buka simulator</button>
   </section>
   </div>
 
   <div id="panelFace" hidden>
-    <p>Tulis DSL watch face secara manual atau impor dari paket ZIP. Verifikasi dan pratinjau memakai aturan interpreter yang sama dengan firmware (<code>chatbox_esp32s3.ino</code>); tombol unggah aktif otomatis jika semua isian lolos verifikasi.</p>
-
     <div class="stabs" role="tablist">
       <div class="stab active" data-sub="text" role="tab">Editor teks</div>
       <div class="stab" data-sub="visual" role="tab">Editor visual</div>
@@ -360,16 +396,14 @@
     <section id="tabText">
       <h2>Editor teks DSL</h2>
         <div class="grid">
-          <div><label for="fPackage">Impor paket ZIP (opsional)</label><input id="fPackage" type="file" accept=".zip,application/zip"></div>
-          <div><label for="fExample">Mulai dari contoh</label><select id="fExample"><option value="">— pilih contoh —</option></select></div>
+          <div><label for="fPackage">Impor ZIP</label><input id="fPackage" type="file" accept=".zip,application/zip"></div>
+          <div><label for="fExample">Contoh</label><select id="fExample"><option value="">Pilih contoh</option></select></div>
         </div>
-        <p class="hint">ZIP berisi <code>record.json</code> dan <code>face.dsl</code> di root (tanpa thumbnail: aplikasi Native menggambar pratinjau langsung dari DSL).</p>
-        <label>DSL watch face (maks 72 perintah, 1500 B; satu perintah per baris atau dipisah <code>;</code>; baris berawalan <code>#</code> = komentar)</label>
+        <label>DSL watch face</label>
         <div id="fEditor"></div>
     </section>
     <section id="vSec" hidden>
       <h2>Editor visual</h2>
-      <p class="hint">Klik tombol elemen (atau seret ke layar) untuk menambah. Geser elemen untuk memindah, tarik titik pegangan untuk mengubah ukuran. DSL teks ditulis otomatis, dan perubahan di editor teks ikut tampil di sini. Menyunting secara visual menulis ulang DSL (komentar tidak dipertahankan). Papan ketik di kanvas: panah = geser (Shift = 8 px), Delete = hapus, Ctrl+Z / Ctrl+Y = urungkan / ulangi, Ctrl+D = gandakan.</p>
       <div id="vPal"></div>
       <canvas id="vCv" tabindex="0" aria-label="Kanvas editor visual OLED 128×64"></canvas>
       <div class="fctl">
@@ -385,16 +419,15 @@
         <label><input type="checkbox" id="vDot" checked> Gaya piksel OLED</label>
       </div>
       <div class="fctl"><span id="vCnt"></span><span id="vPos"></span><span id="vNote" style="color:#e8c15a"></span></div>
-      <p class="hint">Baterai, BLE, WiFi, dan notifikasi mengikuti kontrol di overlay pratinjau.</p>
       <div class="vcols">
-        <div><h3>Lapisan (atas = digambar terakhir)</h3><ul id="vLayers"></ul></div>
+        <div><h3>Lapisan</h3><ul id="vLayers"></ul></div>
         <div><h3>Properti</h3><div id="vInsp"></div></div>
       </div>
     </section>
 
 
     <section>
-      <h2>Identitas &amp; unggah</h2>
+      <h2>Identitas</h2>
       <form id="fForm" novalidate>
         <div class="grid">
           <div><label for="fId">ID unik</label><input id="fId" maxlength="24" placeholder="face_minimal_01"></div>
@@ -407,7 +440,7 @@
         <label for="fDesc">Deskripsi singkat</label>
         <input id="fDesc" maxlength="120">
         <ul id="fChecks"></ul>
-        <label for="fCanon">DSL yang akan diunggah (hasil normalisasi, hanya baca)</label>
+        <label for="fCanon">DSL hasil normalisasi</label>
         <textarea id="fCanon" readonly spellcheck="false"></textarea>
         <div class="grid">
           <button id="fUpload" type="submit" disabled>Unggah ke Firebase RTDB</button>
@@ -427,7 +460,7 @@
     <div class="tab" data-tab="face">Faces</div>
   </div>
   <div class="item-list" id="itemList">
-    <p style="text-align:center; margin-top:20px; font-size:13px;">Memuat data...</p>
+    <p class="empty">Memuat…</p>
   </div>
 </aside>
 
@@ -437,11 +470,10 @@
       <h2 id="agTitle">AI Agent · <span id="agMode"></span></h2>
       <span id="agState"></span>
       <button type="button" id="agReset" class="vbtn">Reset</button>
-      <button type="button" id="agClose">✕ Tutup<kbd>Esc</kbd></button>
+      <button type="button" id="agClose">Tutup</button>
     </div>
     <div id="agLog" aria-live="polite"></div>
-    <div class="agin"><textarea id="agIn" placeholder=""></textarea><button type="button" id="agSend" data-state="send" aria-label="Kirim" title="Kirim (Enter)"><svg class="i-send" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><svg class="i-stop" viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg></button></div>
-    <p class="hint">Enter = kirim, Shift+Enter = baris baru. Isi editor saat ini ikut dikirim sebagai konteks. Hasil yang lolos verifikasi otomatis dibungkus menjadi paket ZIP dan mengisi semua kolom.</p>
+    <div class="agin"><textarea id="agIn" placeholder=""></textarea><button type="button" id="agSend" data-state="send" aria-label="Kirim" title="Kirim"><svg class="i-send" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><svg class="i-stop" viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg></button></div>
   </div>
 </div>
 
@@ -449,18 +481,17 @@
   <div class="sim-card" style="width:min(620px,100%)">
     <div class="sim-head">
       <h2 id="fvTitle">Pratinjau OLED 128×64</h2>
-      <button type="button" id="fvClose">✕ Tutup<kbd>Esc</kbd></button>
+      <button type="button" id="fvClose">Tutup</button>
     </div>
       <canvas id="fOled" width="128" height="64" aria-label="Pratinjau watch face"></canvas>
       <div class="fctl">
-        <label>Jam <select id="fTimeMode"><option value="now">Jam browser (berjalan)</option><option value="manual">Manual (ditahan)</option><option value="none">Belum sinkron (--:--)</option></select></label>
+        <label>Jam <select id="fTimeMode"><option value="now">Jam browser</option><option value="manual">Manual</option><option value="none">Belum sinkron</option></select></label>
         <input type="datetime-local" step="1" id="fTimeVal">
         <label>Baterai <input type="range" id="fBatt" min="0" max="100" value="76" style="width:120px;padding:0"><output id="fBattOut">76%</output></label>
         <label><input type="checkbox" id="fBt" checked> BLE terhubung</label>
         <label>WiFi <select id="fWifi"><option value="0">Putus</option><option value="1">1 bar</option><option value="2">2 bar</option><option value="3">3 bar</option><option value="4" selected>4 bar</option></select></label>
         <label>Notifikasi belum dibaca <input type="number" id="fUnread" min="0" max="99" value="2" style="width:70px"></label>
       </div>
-      <p class="hint">Setiap piksel digambar dengan algoritma Adafruit_GFX seperti pada jam. Perintah yang tidak valid dilewati di pratinjau.</p>
   </div>
 </div>
 
@@ -469,7 +500,7 @@
     <div class="sim-head">
       <h2 id="simTitle">Simulator VynWatch</h2>
       <span id="simState">Berhenti</span>
-      <button type="button" id="simClose">✕ Tutup<kbd>Esc</kbd></button>
+      <button type="button" id="simClose">Tutup</button>
     </div>
     <div class="sim-body">
       <div class="sim-left">
@@ -487,23 +518,22 @@
         </div>
       </div>
       <div class="sim-right">
-        <p class="hint sim-hint"><b>Pad touch:</b> 4 garis elektroda (1–4, kiri→kanan); geser kiri→kanan = <code>on_swipe("right")</code>, sebaliknya <code>"left"</code>.<br><b>Encoder:</b> putar tanpa batas (1 detent = 1 langkah) atau roda mouse = <code>on_encoder</code>; klik tombol tengah = <code>on_sw</code>.<br><b>IMU:</b> X = pitch (+90 = layar menghadap atas), Y = yaw, Z = roll (0 tegak, + bila sisi kanan terangkat); accel dihitung dari sudut (tegak diam = Y +1 g) ditambah guncangan.</p>
         <div class="sim-btns">
           <button type="button" id="simRun">▶ Jalankan</button>
           <button type="button" id="simStop">■ Henti</button>
-          <button type="button" id="simReset">Reset kode ke default</button>
+          <button type="button" id="simReset">Reset kode</button>
         </div>
         <div class="sim-ind"><div id="led"></div><div id="ledTxt">LED: otomatis</div><div id="buzTxt">Buzzer: –</div></div>
         <div class="sim-opts">
           <label><input type="checkbox" id="simAuto"> Gerak otomatis sensor</label>
-          <label title="Tahan tombol SW ≥ 500 ms keluar dari program; tanpa interaksi/app.keep_alive() selama 120 dtk program ditutup"><input type="checkbox" id="simDev" checked> Keluar otomatis seperti perangkat</label>
-          <label>Jam <select id="simTimeMode"><option value="now">Jam browser (sinkron)</option><option value="manual">Manual</option><option value="none">Belum sinkron (nil)</option></select></label>
+          <label><input type="checkbox" id="simDev" checked> Keluar otomatis seperti perangkat</label>
+          <label>Jam <select id="simTimeMode"><option value="now">Jam browser</option><option value="manual">Manual</option><option value="none">Belum sinkron</option></select></label>
           <input type="datetime-local" step="1" id="simTimeVal">
         </div>
         <div class="sensors" id="simSensors"></div>
-        <label for="simStore" style="margin-top:14px">Data dummy storage (JSON, nilai string; ikut berubah saat <code>storage.set</code>)</label>
+        <label for="simStore" style="margin-top:14px">Data storage (JSON)</label>
         <textarea id="simStore" spellcheck="false">{"highscore":"120","name":"VYN"}</textarea>
-        <button type="button" id="simStoreApply">Terapkan data storage</button>
+        <button type="button" id="simStoreApply">Terapkan</button>
         <pre id="simLog"></pre>
       </div>
     </div>
@@ -521,7 +551,6 @@
   </form>
 </dialog>
 
-<!-- JSZip & ACE Editor Scripts -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.js"></script>
 
@@ -634,7 +663,7 @@
       : Object.entries(appsData).filter(([id, data]) => data && data.type === currentTab);
 
     if (entries.length === 0) {
-      list.innerHTML = `<p style="text-align:center; font-size:13px; margin-top:20px;">Belum ada ${isFace ? 'watch face' : currentTab} di database.</p>`;
+      list.innerHTML = `<p class="empty">Belum ada ${isFace ? 'watch face' : currentTab}.</p>`;
       return;
     }
 
@@ -1363,7 +1392,7 @@
     editor.session.setAnnotations((lua.diags || []).map(d => ({ row: d.line - 1, column: d.col - 1, text: d.msg, type: d.sev })));
     const extra = (lua.diags || []).filter(d => d !== lua.first).slice(0, 15).map(d =>
       `<li class="${d.sev === "error" ? "bad" : "warn"}">${d.sev === "error" ? "✗" : "⚠"} Baris ${d.line}, kolom ${d.col}: ${esc(d.msg)}</li>`).join("");
-    $("checks").innerHTML = checks.map(c => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.ok ? c.good : c.msg)}</li>`).join("") + extra;
+    $("checks").innerHTML = checks.filter((c, i) => !c.ok || i === 6).map(c => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.ok ? c.good : c.msg)}</li>`).join("") + extra;
     const ok = checks.every(c => c.ok);
     $("upload").disabled = !ok || busy;
     return { ok, record: ok ? { id: v.id, name: v.name, type: v.type, version: v.version, thumbnail: th.value, description: v.description, code } : null };
@@ -1405,7 +1434,7 @@
     $("thumbnail").value = thumbnail;
     editor.setValue(code, -1);
     validate();
-    status(`Isi ${file.name} sudah dimuat ke kolom. Periksa hasil verifikasi di bawah.`);
+    status(`${file.name} dimuat.`);
   }
 
   $("packageFile").addEventListener("change", async event => {
@@ -1419,7 +1448,7 @@
   $("form").addEventListener("submit", async event => {
     event.preventDefault();
     const { ok, record } = validate();
-    if (!ok) { status("Masih ada kolom kosong atau tidak valid. Lihat daftar verifikasi.", true); return; }
+    if (!ok) { status("Masih ada kolom kosong atau tidak valid.", true); return; }
     busy = true;
     $("upload").disabled = true;
     try {
@@ -1435,7 +1464,7 @@
         if (!confirmed) return;
         if (String(existing.version || "") === record.version) {
           alert(`Versi "${record.version}" sama dengan versi yang sudah ada. Ubah versi terlebih dahulu. Isi pekerjaan Anda tetap tersimpan.`);
-          status("Versi belum berubah. Ubah versi sebelum mengunggah.", true);
+          status("Versi belum berubah.", true);
           return;
         }
       } else if (idMatch || nameMatch) {
@@ -2491,7 +2520,7 @@ string.dump = nil
     const extra = an.diags.filter(d => d !== first).slice(0, 15).map(d =>
       `<li class="${d.sev === "error" ? "bad" : "warn"}">${d.sev === "error" ? "✗" : "⚠"} Baris ${d.line}, kolom ${d.col}: ${esc(d.msg)}</li>`).join("");
     const nameNote = v.name && devName !== v.name ? `<li class="warn">⚠ Di jam nama dikirim sebagai "${esc(devName)}" (hanya huruf/angka/spasi, maks 15 karakter).</li>` : "";
-    $("fChecks").innerHTML = checks.map(c => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.ok ? c.good : c.msg)}</li>`).join("") + nameNote + extra;
+    $("fChecks").innerHTML = checks.filter((c, i) => !c.ok || i === 5).map(c => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.ok ? c.good : c.msg)}</li>`).join("") + nameNote + extra;
     $("fCanon").value = an.canon;
     const ok = checks.every(c => c.ok);
     $("fUpload").disabled = !ok || fBusy;
@@ -2550,7 +2579,7 @@ string.dump = nil
     fEditor.setValue(String(rec.dsl || "").split(";").join("\n"), -1);
     setMainTab("face");
     fValidate();
-    fStatus(`"${rec.name || rec.id}" dimuat dari database. Naikkan versi sebelum mengunggah ulang.`);
+    fStatus(`"${rec.name || rec.id}" dimuat.`);
   }
 
   // ---------- Impor / ekspor ZIP ----------
@@ -2569,7 +2598,7 @@ string.dump = nil
     $("fId").value = rec.id; $("fName").value = rec.name; $("fTag").value = rec.tag; $("fVersion").value = rec.version; $("fDesc").value = rec.description;
     fEditor.setValue(dslText.replace(/\r\n?/g, "\n").replace(/\n+$/, ""), -1);
     fValidate();
-    fStatus(`Isi ${file.name} sudah dimuat ke kolom. Periksa hasil verifikasi di bawah.`);
+    fStatus(`${file.name} dimuat.`);
   }
   $("fPackage").addEventListener("change", async e => {
     const file = e.target.files?.[0];
@@ -2578,7 +2607,7 @@ string.dump = nil
   });
   $("fZip").addEventListener("click", async () => {
     const { ok, record } = fValidate();
-    if (!ok) { fStatus("Perbaiki isian yang tidak valid sebelum mengunduh paket.", true); return; }
+    if (!ok) { fStatus("Masih ada kolom kosong atau tidak valid.", true); return; }
     const zip = new JSZip();
     zip.file("record.json", JSON.stringify(record, null, 2) + "\n");
     zip.file("face.dsl", fEditor.getValue().replace(/\r\n?/g, "\n").replace(/\n+$/, "") + "\n");
@@ -2594,7 +2623,7 @@ string.dump = nil
   $("fForm").addEventListener("submit", async event => {
     event.preventDefault();
     const { ok, record } = fValidate();
-    if (!ok) { fStatus("Masih ada kolom kosong atau tidak valid. Lihat daftar verifikasi.", true); return; }
+    if (!ok) { fStatus("Masih ada kolom kosong atau tidak valid.", true); return; }
     fBusy = true; $("fUpload").disabled = true;
     try {
       const idMatch = Object.prototype.hasOwnProperty.call(facesData, record.id) ? [record.id, facesData[record.id]] : null;
@@ -2606,7 +2635,7 @@ string.dump = nil
         if (!confirmed) return;
         if (String(existing.version || "") === record.version) {
           alert(`Versi "${record.version}" sama dengan versi yang sudah ada. Ubah versi terlebih dahulu. Isi pekerjaan Anda tetap tersimpan.`);
-          fStatus("Versi belum berubah. Ubah versi sebelum mengunggah.", true);
+          fStatus("Versi belum berubah.", true);
           return;
         }
       } else if (idMatch || nameMatch) {
@@ -2795,7 +2824,7 @@ string.dump = nil
     }
     function buildInsp() {
       const box = $("vInsp"); insp = []; box.innerHTML = "";
-      if (!els[sel]) { box.innerHTML = '<p class="hint">Klik elemen di layar atau di daftar lapisan untuk mengubah propertinya.</p>'; return; }
+      if (!els[sel]) { box.innerHTML = '<p class="hint">Tidak ada elemen terpilih.</p>'; return; }
       const e = els[sel], sp = SPEC[e.op], g = document.createElement("div"); g.className = "vgrid";
       const reg = (c, fn) => insp.push(() => { if (document.activeElement !== c) fn(); });
       const mk = (label, c) => { const l = document.createElement("label"); l.textContent = label; g.appendChild(l); g.appendChild(c); };
@@ -2949,10 +2978,10 @@ string.dump = nil
   (() => {
     const AGENT_URL = "/api/agent", GUIDES = { app: "LUA-PROGRAMMING-GUIDE.md", face: "WATCHFACE-DSL-GUIDE.md" }, MAXFIX = 2;
     const LABEL = { app: "Aplikasi/Game (Lua)", face: "Watch Face (DSL)" };
-    const HINT = { app: "Contoh: buat game snake dengan skor dan ikon ular…", face: "Contoh: buat watch face analog dengan tanggal dan baterai…" };
+    const HINT = { app: "Tulis permintaan…", face: "Tulis permintaan…" };
     const hist = { app: [], face: [] }, view = { app: [], face: [] }, guides = {};
     let busy = false, ctl = null;
-    const setBusy = b => { busy = b; const el = $("agSend"); el.dataset.state = b ? "stop" : "send"; el.setAttribute("aria-label", b ? "Hentikan respons" : "Kirim"); el.title = b ? "Hentikan respons" : "Kirim (Enter)"; };
+    const setBusy = b => { busy = b; const el = $("agSend"); el.dataset.state = b ? "stop" : "send"; el.setAttribute("aria-label", b ? "Hentikan respons" : "Kirim"); el.title = b ? "Hentikan" : "Kirim"; };
     const mode = () => document.querySelector(".mtab.active").dataset.main;
     const log = $("agLog"), ov = $("agOverlay"), openB = $("agOpen"), ID = /^[A-Za-z0-9_-]{1,24}$/;
 
@@ -2971,7 +3000,7 @@ string.dump = nil
     function render() {
       const m = mode(); $("agMode").textContent = LABEL[m]; $("agIn").placeholder = HINT[m];
       log.innerHTML = ""; view[m].forEach(paint);
-      if (!view[m].length) paint({ cls: "ai", text: `Mode aktif: ${LABEL[m]}. Panduan ${GUIDES[m]} dikirim otomatis ke AI. Jelaskan apa yang ingin dibuat.` });
+      if (!view[m].length) paint({ cls: "ai", text: "Apa yang ingin dibuat?" });
     }
 
     function problems(m, o) {
