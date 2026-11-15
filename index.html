@@ -2,12 +2,13 @@
 <html lang="id">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+  <meta name="theme-color" content="#101417">
   <title>VynWatch Creator</title>
   <style>
     :root { color-scheme: dark; font: 15px system-ui, sans-serif; --bg:#101417; --card:#1b2227; --line:#303b42; --text:#edf4f4; --sub:#a6b6bc; --accent:#54d7c9; --warn:#ff8b81; }
     * { box-sizing:border-box; }
-    body { margin:0; padding:28px 16px 48px; background:var(--bg); color:var(--text); display: flex; gap: 24px; max-width: 1100px; margin: 0 auto; align-items: flex-start; }
+    body { margin:0 auto; padding:28px 16px 48px; background:var(--bg); color:var(--text); display: flex; gap: 24px; max-width: 1100px; align-items: flex-start; }
     
     /* Sidebar Styles */
     aside { width: 320px; flex-shrink: 0; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); position: sticky; top: 28px; height: calc(100vh - 56px); display: flex; flex-direction: column; }
@@ -198,6 +199,97 @@
     .vgrid input, .vgrid select { padding:6px 8px; font-size:12px; }
     .vgrid input[type=checkbox] { width:auto; justify-self:start; }
     @media(max-width:700px) { .vcols { grid-template-columns:1fr; } }
+
+    /* ===================================================================
+       Penyempurnaan mobile
+       - --vv-h / --vv-top diisi JS dari visualViewport, jadi overlay selalu
+         pas dengan area yang terlihat (di atas keyboard virtual).
+       =================================================================== */
+    html { -webkit-text-size-adjust:100%; text-size-adjust:100%; -webkit-tap-highlight-color:transparent; }
+    body { overflow-wrap:anywhere; padding-left:max(16px, env(safe-area-inset-left)); padding-right:max(16px, env(safe-area-inset-right)); padding-bottom:max(48px, calc(env(safe-area-inset-bottom) + 24px)); }
+    button, .tab, .mtab, .stab, select { touch-action:manipulation; }
+    code, pre { overflow-wrap:anywhere; }
+
+    #simOverlay, #fvOverlay, #agOverlay {
+      inset:auto 0 auto 0; top:var(--vv-top, 0px); height:var(--vv-h, 100dvh);
+      --vh:var(--vv-h, 100dvh);
+      padding-left:max(16px, env(safe-area-inset-left)); padding-right:max(16px, env(safe-area-inset-right));
+    }
+    .sim-head { position:sticky; top:-16px; z-index:3; margin:-16px -16px 12px; padding:16px 16px 10px; background:var(--card); flex-wrap:wrap; }
+    .sim-head h2 { min-width:0; overflow-wrap:anywhere; }
+    .sim-opts select, .sim-opts input[type=datetime-local], .fctl select, .fctl input[type=datetime-local] { max-width:100%; }
+    .agin textarea { max-height:40dvh; }
+    #agLog { overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+
+    @media (pointer:coarse) {
+      kbd { display:none; }
+      input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), select, textarea { font-size:16px !important; }
+      button, .btn-load, .btn-delete, .vbtn { min-height:44px; }
+      .tab, .mtab, .stab { min-height:44px; display:flex; align-items:center; justify-content:center; }
+      input[type=checkbox], input[type=radio] { width:20px !important; height:20px; flex:none; }
+      .fctl label, .sim-opts label { min-height:36px; }
+      #vCv { touch-action:pan-y; }
+      .vp { width:96px; padding:8px 6px; }
+      #vLayers li { padding:10px; }
+    }
+
+    @media (max-width:850px) {
+      body { flex-direction:column; gap:20px; padding-top:max(16px, env(safe-area-inset-top)); }
+      main, aside { width:100%; }
+      aside { height:min(420px, 62dvh); }
+      h1 { font-size:24px; }
+      section { padding:16px; border-radius:16px; }
+      .mtabs { flex-wrap:wrap; }
+      .mtab { flex:1 1 calc(50% - 4px); text-align:center; padding:10px 12px; }
+      #agOpen { flex:1 1 100%; margin:0; }
+      .stabs .stab { flex:1 1 0; text-align:center; }
+      #fvOpen { flex:1 1 100%; margin:0; }
+      .sim-body { grid-template-columns:minmax(0,1fr); }
+      .sim-left { width:100%; max-width:470px; margin:0 auto; }
+      #padStrip { height:auto; aspect-ratio:1 / .26; }
+      #knob { width:min(170px, 44vw); }
+      .vcols { grid-template-columns:1fr; }
+      #vLayers { max-height:220px; }
+      #fvOverlay .sim-card { width:100% !important; }
+      #fOled { max-width:none; }
+    }
+
+    @media (max-width:600px) {
+      body { padding-left:max(12px, env(safe-area-inset-left)); padding-right:max(12px, env(safe-area-inset-right)); }
+      section { padding:14px; }
+      .btn-delete, .btn-load { padding:8px 12px; }
+      #codeEditor, #fEditor { height:min(320px, 46dvh); }
+      textarea { min-height:96px; }
+      #simOverlay, #fvOverlay, #agOverlay { padding:0; padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right); align-items:stretch; }
+      #simOverlay .sim-card, #fvOverlay .sim-card, #agOverlay .sim-card { width:100% !important; max-height:none; height:100%; border-radius:0; border-width:0; padding:12px 12px max(12px, env(safe-area-inset-bottom)); }
+      .sim-head { top:-12px; margin:-12px -12px 10px; padding:max(12px, env(safe-area-inset-top)) 12px 10px; gap:8px; }
+      .sim-head h2 { font-size:17px; flex:1 1 100%; order:-1; }
+      .sim-head button { flex:1 1 auto; }
+      #simState { flex:1 1 100%; }
+      .sim-opts { gap:10px; }
+      .sim-opts > * { flex:1 1 100%; }
+      .fctl { gap:10px; }
+      .fctl > label, .fctl > input[type=datetime-local] { flex:1 1 100%; }
+      .fctl input[type=range] { flex:1 1 0; width:auto !important; min-width:0; }
+      .fctl input[type=number] { width:80px !important; }
+      #simLog { height:96px; }
+      .agl { min-width:92px; }
+      .agm { max-width:94%; }
+      /* AI Agent: layar penuh, log mengisi ruang, kolom input menempel di atas keyboard */
+      #agOverlay .sim-card { display:flex; flex-direction:column; overflow:hidden; }
+      #agOverlay #agLog { flex:1 1 auto; height:auto; min-height:0; }
+      #agOverlay .agin { flex:none; margin-top:8px; }
+      #agOverlay .agin textarea { min-height:48px; max-height:30dvh; }
+      #agOverlay .agin button { min-height:48px; padding:0 18px; }
+      #agOverlay .hint { flex:none; margin:6px 0 0; }
+      html.kb-open #agOverlay .hint { display:none; }
+      #agTitle { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    }
+
+    @media (max-height:480px) and (orientation:landscape) {
+      #agLog { height:max(96px, calc(var(--vh) - 190px)); }
+      .sim-card { padding:10px; }
+    }
   </style>
 </head>
 <body>
@@ -425,6 +517,34 @@
 <!-- JSZip & ACE Editor Scripts -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.js"></script>
+
+<script>
+/* Keyboard virtual & viewport: overlay mengikuti area terlihat, kolom input tidak tertutup keyboard */
+(() => {
+  const vv = window.visualViewport, root = document.documentElement, coarse = matchMedia("(pointer:coarse)");
+  let raf = 0, lastH = vv ? vv.height : innerHeight;
+  const sync = () => {
+    raf = 0; if (!vv) return;
+    if (vv.scale > 1.02) { root.style.removeProperty("--vv-h"); root.style.removeProperty("--vv-top"); return; }
+    root.style.setProperty("--vv-h", Math.round(vv.height) + "px");
+    root.style.setProperty("--vv-top", Math.round(vv.offsetTop) + "px");
+    const kb = innerHeight - vv.height - vv.offsetTop;
+    root.classList.toggle("kb-open", kb > 120 || (coarse.matches && lastH - vv.height > 120));
+    const ag = document.getElementById("agOverlay"), log = document.getElementById("agLog");
+    if (ag && log && ag.classList.contains("show")) log.scrollTop = log.scrollHeight;
+  };
+  const queue = () => { if (!raf) raf = requestAnimationFrame(sync); };
+  if (vv) { vv.addEventListener("resize", () => { queue(); const t = document.activeElement; if (t && isField(t) && !t.closest("#agOverlay")) setTimeout(() => show(t), 120); }); vv.addEventListener("scroll", queue); }
+  addEventListener("orientationchange", () => setTimeout(() => { lastH = vv ? vv.height : innerHeight; queue(); }, 300));
+  const isField = t => t.matches && t.matches('textarea, select, .ace_text-input, input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=button]):not([type=submit])');
+  const show = t => { try { t.scrollIntoView({ block:"center", inline:"nearest", behavior:"smooth" }); } catch {} };
+  document.addEventListener("focusin", e => {
+    if (!coarse.matches || !isField(e.target) || e.target.closest("#agOverlay")) return;
+    setTimeout(() => show(e.target), 350);
+  });
+  sync();
+})();
+</script>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
@@ -2767,6 +2887,7 @@ string.dump = nil
       else resize(e, drag.id, drag.o, q, gst(vState()));
       drag.moved = true; upd();
     };
+    cv.addEventListener("touchstart", ev => { if (drag && ev.cancelable) ev.preventDefault(); }, { passive:false });
     cv.onpointerup = cv.onpointercancel = () => { if (drag && drag.moved) push(); drag = null; };
     $("vSec").addEventListener("keydown", ev => {
       if (/^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) return;
@@ -2967,7 +3088,7 @@ string.dump = nil
           msgs.push({ role: "model", text: raw }, { role: "user", text: "Automatic validation failed:\n- " + errs.join("\n- ") + "\nReturn the complete corrected output." });
         }
       } catch (e) { addView(m, "err", "Gagal: " + e.message); }
-      finally { busy = false; $("agSend").disabled = false; $("agState").textContent = ""; $("agIn").focus(); }
+      finally { busy = false; $("agSend").disabled = false; $("agState").textContent = ""; if (!matchMedia("(pointer:coarse)").matches || document.activeElement === document.body) $("agIn").focus({ preventScroll: true }); }
     }
 
     // ---------- Overlay ----------
@@ -2976,7 +3097,7 @@ string.dump = nil
     function openAg() {
       if (open) return; open = true; closing = false; clearTimeout(ct); render();
       ov.classList.add("show"); ov.setAttribute("aria-hidden", "false"); void ov.offsetWidth; ov.classList.add("in");
-      bg().forEach(el => el.setAttribute("inert", "")); document.documentElement.style.overflow = "hidden"; $("agIn").focus({ preventScroll: true });
+      bg().forEach(el => el.setAttribute("inert", "")); document.documentElement.style.overflow = "hidden"; if (!matchMedia("(pointer:coarse)").matches) $("agIn").focus({ preventScroll: true });
     }
     function closeAg() {
       if (!open || closing) return; closing = true; ov.classList.remove("in");
@@ -2985,6 +3106,7 @@ string.dump = nil
         document.documentElement.style.overflow = ""; open = closing = false; openB.focus({ preventScroll: true });
       }, 280);
     }
+    $("agSend").addEventListener("mousedown", e => e.preventDefault());
     openB.addEventListener("click", openAg); $("agClose").addEventListener("click", closeAg); $("agSend").addEventListener("click", send);
     $("agReset").addEventListener("click", () => { if (busy) return; const m = mode(); hist[m] = []; view[m] = []; render(); });
     $("agIn").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
