@@ -1,6 +1,6 @@
 // Serverless function (Vercel, Node 18+): POST /api/agent  -> aliran SSE dari Gemini
 // Kunci Gemini dibaca dari Environment Variable bernama "API" (tidak pernah dikirim ke browser).
-const MODEL = "gemini-flash-latest";
+const MODEL = "gemini-flash-lite-latest";
 const URL_ = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse`;
 
 const COMMON = `You are the built-in code-generation engine of "VynWatch Creator", an admin tool that builds store packages for the VynWatch smartwatch (ESP32-S3, 128x64 monochrome OLED).
