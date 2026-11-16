@@ -2304,7 +2304,36 @@ function __gc() collect(); collect() end
     // ---------- Penggambar ala Adafruit_GFX ----------
     // Baris 0-10 dipakai overlay firmware (indikator baterai, pil Timer/Alarm). Elemen yang menggambar di sana hanya mengganggu visual.
     const TOP_ROWS = 11;
-    const touchesTop = (o, s) => !!(s && s.top > 0 && !(o.op === "S" && o.p[2] === 2));   // ikon baterai (S,x,y,2) memang di sana
+    // Elemen kecil yang bergerak luas (titik orbit Q, jarum A, angka-jarum H, busur progres P): jangkauan geraknya dihitung dengan
+    // merender elemen di banyak keadaan waktu/baterai lalu menyatukan pikselnya. Hasilnya di-cache per (op, parameter).
+    const SWEEP_OPS = "QAHP", sweepCache = new Map();
+    let sweepStates = null;
+    function sweepInfo(o) {
+      if (!SWEEP_OPS.includes(o.op)) return null;
+      const key = o.op + "|" + o.p.join(",");
+      if (sweepCache.has(key)) return sweepCache.get(key);
+      if (!sweepStates) {
+        const b = { ok: true, h: 0, m: 0, s: 0, wd: 0, d: 1, mo: 0, y: 2026, batt: 100, bt: true, wifi: 4, unread: 1, blink: true }; sweepStates = [];
+        for (let i = 0; i < 60; i++) { sweepStates.push({ ...b, m: i }, { ...b, s: i }); }
+        for (let i = 0; i < 24; i++) sweepStates.push({ ...b, h: i });
+        for (let i = 0; i <= 100; i += 5) sweepStates.push({ ...b, batt: i });
+      }
+      const r = new Renderer(), acc = new Uint8Array(W * H), op = [{ op: o.op, p: o.p, t: o.t || "", valid: true }];
+      for (const st of sweepStates) { r.run(op, st); for (let i = 0; i < W * H; i++) if (r.fb[i]) acc[i] = 1; }
+      let x0 = 999, y0 = 999, x1 = -1, y1 = -1, top = false;
+      for (let i = 0; i < W * H; i++) if (acc[i]) {
+        const x = i % W, y = (i / W) | 0;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (y < TOP_ROWS) top = true;
+      }
+      const res = { box: x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1], top };
+      if (sweepCache.size > 500) sweepCache.clear();
+      sweepCache.set(key, res); return res;
+    }
+    const touchesTop = (o, s) => {
+      if (o.op === "S" && o.p[2] === 2) return false;   // ikon baterai (S,x,y,2) memang di sana
+      if (s && s.top > 0) return true;
+      const w = sweepInfo(o); return !!(w && w.top);
+    };
     class Renderer {
       constructor() { this.fb = new Uint8Array(W * H); this.col = 1; this.inN = 0; this.outN = 0; this.topN = 0; }
       px(x, y, c) {
@@ -2685,14 +2714,14 @@ function __gc() collect(); collect() end
           if (s.inside === 0 && s.outside > 0) add("warning", o.line, o.col, `${o.op}: seluruh gambar berada di luar layar 128×64.`);
           else if (s.outside > 0) add("warning", o.line, o.col, `${o.op}: sebagian gambar (±${s.outside} piksel) terpotong di luar layar 128×64.`);
           else if (s.inside === 0 && !(o.op === "L" && o.t === "")) add("warning", o.line, o.col, `${o.op}: tidak menggambar apa pun (parameter nol?).`);
-          if (touchesTop(o, s)) add("warning", o.line, o.col, `${o.op}: elemen melewati batas atas area yang disarankan (baris 0–10 dipakai overlay baterai dan alarm/timer); tidak bermasalah, hanya mengganggu visual.`);
+          if (touchesTop(o, s)) add("warning", o.line, o.col, `${o.op}: ${s.top > 0 ? "elemen" : "jangkauan gerak elemen"} melewati batas atas area yang disarankan (baris 0–10 dipakai overlay baterai dan alarm/timer); tidak bermasalah, hanya mengganggu visual.`);
         });
       }
       diags.sort((a, b) => a.line - b.line || a.col - b.col);
       return { ok: !hasErr, ops, canon, bytes, count: known.length, diags };
     }
 
-    return { analyze, Renderer, TAGS, LIMIT, OPS, CHECK_STATE, timeStr, touchesTop };
+    return { analyze, Renderer, TAGS, LIMIT, OPS, CHECK_STATE, timeStr, touchesTop, sweepInfo };
   })();
   if (typeof module !== "undefined") module.exports = FACE;
 
@@ -2965,6 +2994,8 @@ function __gc() collect(); collect() end
     const ang = (st, k) => ((k === 0 ? (st.h % 12) * 30 + st.m * .5 : k === 1 ? st.m * 6 + st.s * .1 : st.s * 6) - 90) * Math.PI / 180;
 
     // ---------- Geometri ----------
+    // Kotak tampilan: untuk elemen kecil yang bergerak luas (Q, A, H, P) = seluruh jangkauan geraknya, selain itu = bentuk saat ini
+    const rbox = (e, st) => { const w = FACE.sweepInfo(e); return w && w.box ? w.box : box(e, st); };
     function box(e, st) {
       const p = e.p;
       if (e.op === "T" || e.op === "L") {
@@ -3062,12 +3093,12 @@ function __gc() collect(); collect() end
       $("vLayers").querySelectorAll("li[data-i]").forEach(li => li.classList.toggle("top", topSet.has(+li.dataset.i)));
       topSet.forEach(i => {
         if (i === sel) return;
-        const tb = box(els[i], gs0);
+        const tb = rbox(els[i], gs0);
         if (tb) { ctx.strokeStyle = "#ffd23f"; ctx.lineWidth = 1; ctx.strokeRect((M + tb[0]) * S - .5, (M + tb[1]) * S - .5, (tb[2] - tb[0]) * S + 1, (tb[3] - tb[1]) * S + 1); }
       });
       const e = els[sel];
       if (e) {
-        const gs = gs0, bb = box(e, gs);
+        const gs = gs0, bb = rbox(e, gs);
         if (bb) { ctx.strokeStyle = topSet.has(sel) ? "#ffd23f" : "#54d7c9"; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeRect((M + bb[0]) * S, (M + bb[1]) * S, (bb[2] - bb[0]) * S, (bb[3] - bb[1]) * S); ctx.setLineDash([]); }
         hnd(e, bb, gs).forEach(h => { ctx.fillStyle = "#54d7c9"; ctx.strokeStyle = "#09201d"; ctx.lineWidth = 1; ctx.fillRect((M + h.x) * S - 5, (M + h.y) * S - 5, 10, 10); ctx.strokeRect((M + h.x) * S - 5, (M + h.y) * S - 5, 10, 10); });
       }
