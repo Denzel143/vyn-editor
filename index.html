@@ -462,7 +462,119 @@
     html.kb-open #agOverlay .agin textarea { min-height:48px; }
     #draftInfo { min-height:16px; margin:0 0 6px; font-size:12px; color:var(--sub); }
     #draftInfo.bad { color:var(--warn); }
-  </style>
+  
+/* ===== AURORA SIHIR · lapisan visual (tanpa mengubah logika) ===== */
+@property --drift{syntax:'<angle>';inherits:false;initial-value:0deg}
+@property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
+@property --shift{syntax:'<angle>';inherits:true;initial-value:0deg}
+:root{--bg:#090c14;--card:#141a28;--line:#27314a;--text:#eef3fb;--sub:#a9b6cf;--accent:#5eead4;
+  --mg:linear-gradient(110deg,#54d7c9 0%,#7c8cff 25%,#d46bff 50%,#ff7ab8 75%,#54d7c9 100%);
+  --conic:conic-gradient(from var(--ang),#54d7c9,#8b7bff,#ff5fcb,#ffb86b,#54d7c9);
+  transition:--shift 1.8s ease}
+*{--glow:hsl(var(--ih,170) 92% 62%)}
+html{background:#090c14}
+::selection{background:hsl(var(--ih,170) 90% 60%/.35)}
+
+/* latar aurora: 4 gumpalan cahaya yang melayang & bergeser warna */
+body::before{content:"";position:fixed;inset:-25%;z-index:-2;pointer-events:none;
+  background:
+   radial-gradient(38% 34% at 18% 22%,rgba(84,215,201,.30),transparent 70%),
+   radial-gradient(34% 36% at 82% 14%,rgba(139,92,255,.30),transparent 70%),
+   radial-gradient(40% 38% at 68% 86%,rgba(255,80,190,.24),transparent 70%),
+   radial-gradient(30% 30% at 12% 82%,rgba(255,170,90,.16),transparent 70%);
+  filter:hue-rotate(calc(var(--drift) + var(--shift))) saturate(1.15);
+  animation:mgdrift 70s linear infinite,mgfloat 26s ease-in-out infinite alternate}
+@keyframes mgdrift{to{--drift:360deg}}
+@keyframes mgfloat{from{transform:translate3d(-2%,-1%,0) rotate(0) scale(1)}to{transform:translate3d(3%,2%,0) rotate(12deg) scale(1.12)}}
+@keyframes mgspin{to{--ang:360deg}}
+@keyframes mgflow{to{background-position:100% 0}}
+
+/* aura yang mengikuti kursor */
+#mgAura{position:fixed;left:0;top:0;width:380px;height:380px;border-radius:50%;pointer-events:none;z-index:-1;opacity:0;
+  background:radial-gradient(circle,hsl(var(--ih,170) 95% 60%/.2),transparent 66%);mix-blend-mode:screen;
+  transition:transform .45s cubic-bezier(.2,.8,.2,1),opacity .4s}
+#mgFx{position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden}
+.mg-spark{position:fixed;width:7px;height:7px;border-radius:50%;pointer-events:none}
+
+/* judul */
+h1{background:var(--mg) 0 0/300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:mgflow 9s linear infinite alternate}
+aside h2{background:var(--mg) 0 0/300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:mgflow 9s linear infinite alternate}
+
+/* kartu & section: cahaya spotlight mengikuti kursor */
+section,aside{background:rgba(20,26,40,.8);transition:border-color .3s,box-shadow .35s}
+section:hover,aside:hover{border-color:hsl(var(--ih,170) 70% 55%/.5);
+  background:radial-gradient(340px circle at var(--mx,-999px) var(--my,-999px),hsl(var(--ih,170) 95% 62%/.11),transparent 70%),rgba(20,26,40,.8);
+  box-shadow:0 22px 60px -34px var(--glow)}
+
+/* tab */
+.tab,.item,#checks{background-color:#0e1320}
+:where(.tab,.mtab,.stab,button){position:relative;overflow:hidden}
+.tab,.mtab,.stab{transition:color .25s,background-color .25s,border-color .25s,box-shadow .3s}
+.tab:not(.active):hover,.mtab:not(.active):hover,.stab:not(.active):hover{color:var(--text);background-color:#161d30;border-color:hsl(var(--ih,170) 80% 60%/.6);box-shadow:0 0 18px -6px var(--glow)}
+.tab.active,.mtab.active,.stab.active{background-image:var(--mg);background-size:300% 100%;color:#0a1018;border-color:transparent;box-shadow:0 6px 22px -8px var(--glow);animation:mgflow 6s linear infinite alternate}
+
+/* tombol utama: gradasi mengalir + kilau menyapu */
+button:not([class]):not([value="no"]):not([value="yes"]):not([id$="Close"]):not(#simStop):not(#simReset):not(#simStoreApply),
+#updateConfirm button[value="yes"],#vSec.vfocus .vptabs button.on{
+  background-image:var(--mg);background-size:300% 100%;background-position:0 0;color:#0a1018;
+  transition:background-position .9s cubic-bezier(.2,.8,.2,1),box-shadow .35s,transform .12s,filter .2s,opacity .2s}
+button:not([class]):not([value="no"]):not([value="yes"]):not([id$="Close"]):not(#simStop):not(#simReset):not(#simStoreApply):not(:disabled):hover,
+#updateConfirm button[value="yes"]:hover{background-position:100% 0;filter:saturate(1.2);transform:translateY(-1px);
+  box-shadow:0 10px 30px -10px var(--glow),inset 0 0 0 1px rgba(255,255,255,.22)}
+button:not([class]):not([value="no"]):not([value="yes"]):not([id$="Close"]):not(#simStop):not(#simReset):not(#simStoreApply)::after,
+#updateConfirm button[value="yes"]::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.5) 50%,transparent 65%);transform:translateX(-130%)}
+button:not([class]):not([value="no"]):not([value="yes"]):not([id$="Close"]):not(#simStop):not(#simReset):not(#simStoreApply):not(:disabled):hover::after,
+#updateConfirm button[value="yes"]:hover::after{transform:translateX(130%);transition:transform .8s ease}
+
+/* tombol sekunder: tepi bercahaya warna-warni */
+button:is(.btn-ghost,.vbtn,#simClose,#simStop,#simReset,#simStoreApply,#fvClose,#agClose,[value="no"]):not(:disabled):hover{
+  box-shadow:0 0 0 1px var(--glow),0 8px 24px -10px var(--glow)}
+/* tombol berbahaya tetap merah-jingga, tapi berpendar */
+.btn-delete:hover,.btn-clear:not(:disabled):hover{border-color:#ff8b81;background:linear-gradient(110deg,rgba(255,139,129,.2),rgba(255,184,107,.2));box-shadow:0 0 22px -4px rgba(255,120,100,.6)}
+#clearConfirm button[value="yes"]:not(:disabled):hover{box-shadow:0 8px 28px -8px rgba(255,120,100,.8)}
+
+/* riak warna saat klik */
+.mg-rip{position:absolute;border-radius:50%;pointer-events:none;transform:scale(0);opacity:.9;
+  background:radial-gradient(circle,hsl(var(--rh) 100% 78%/.85),hsl(calc(var(--rh) + 70) 100% 66%/0) 70%);animation:mgrip .7s ease-out forwards}
+@keyframes mgrip{to{transform:scale(1);opacity:0}}
+
+/* input: border gradasi berputar + glow saat fokus */
+input,select,textarea{background-color:#0e1320;transition:box-shadow .3s,border-color .3s}
+input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):focus,select:focus,textarea:focus{
+  border-color:transparent;outline:none;
+  background:linear-gradient(#0e1320,#0e1320) padding-box,var(--conic) border-box;animation:mgspin 3.5s linear infinite;
+  box-shadow:0 0 0 3px hsl(var(--ih,170) 90% 60%/.14),0 10px 30px -10px var(--glow)}
+#codeEditor{transition:border-color .3s,box-shadow .3s}
+#codeEditor:focus-within{border-color:hsl(var(--ih,170) 85% 62%);box-shadow:0 0 0 3px hsl(var(--ih,170) 90% 60%/.14),0 10px 34px -10px var(--glow)}
+
+/* daftar database */
+.item{transition:transform .2s,border-color .25s,box-shadow .3s}
+.item:hover{transform:translateX(3px);border-color:hsl(var(--ih,170) 80% 60%/.7);
+  background:radial-gradient(220px circle at var(--mx,-999px) var(--my,-999px),hsl(var(--ih,170) 95% 62%/.16),transparent 70%),#0e1320;
+  box-shadow:inset 3px 0 0 var(--glow),0 8px 24px -14px var(--glow)}
+.item-list::-webkit-scrollbar-thumb,*::-webkit-scrollbar-thumb{background:linear-gradient(#54d7c9,#8b7bff,#ff5fcb);border-radius:4px}
+
+/* checklist */
+#checks li.ok{text-shadow:0 0 14px rgba(84,215,201,.45)}
+#checks li.warn{text-shadow:0 0 14px rgba(232,193,90,.4)}
+#checks li.bad{text-shadow:0 0 14px rgba(255,139,129,.45)}
+#checks li{animation:mgpulse 3.2s ease-in-out infinite alternate}
+@keyframes mgpulse{from{opacity:.82}to{opacity:1}}
+
+/* dialog & simulator: kartu dengan border gradasi bergerak */
+dialog,.sim-card{border:1.5px solid transparent;
+  background:linear-gradient(var(--card),var(--card)) padding-box,var(--conic) border-box;animation:mgspin 7s linear infinite}
+.sim-card{box-shadow:0 24px 80px #000a,0 0 90px -24px var(--glow)}
+dialog{box-shadow:0 20px 70px #000a,0 0 80px -20px var(--glow)}
+dialog::backdrop{background:radial-gradient(60% 60% at 30% 20%,rgba(139,92,255,.35),transparent),radial-gradient(50% 50% at 80% 90%,rgba(255,80,190,.28),transparent),rgba(4,6,12,.78);backdrop-filter:blur(5px)}
+#simOverlay.in,#fvOverlay.in,#agOverlay.in{background:rgba(5,8,16,.78);backdrop-filter:blur(8px) saturate(1.5)}
+
+@media (pointer:coarse){#mgAura{display:none}.item:hover{transform:none}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01s!important;animation-iteration-count:1!important;transition-duration:.01s!important}
+  #mgAura{display:none}}
+</style>
 </head>
 <body>
 <main>
@@ -3803,5 +3915,75 @@ function __gc() collect(); collect() end
 
   validate();
 </script>
+<script>
+/* Aurora Sihir: efek interaksi (ripple, percikan, spotlight, pergeseran warna). Murni visual. */
+(()=>{
+  const R=document.documentElement,B=document.body,
+        rm=matchMedia('(prefers-reduced-motion:reduce)').matches,
+        touch=matchMedia('(pointer:coarse)').matches;
+  let hue=Math.floor(Math.random()*360),shift=0;
+  const nx=()=>Math.round(hue=(hue+137.5)%360);
+  const bump=d=>{shift+=d;R.style.setProperty('--shift',shift+'deg')};
+  const fx=document.createElement('div');fx.id='mgFx';B.appendChild(fx);
+  let aura=null;
+  if(!touch&&!rm){aura=document.createElement('div');aura.id='mgAura';B.appendChild(aura)}
+
+  const INT='button,.tab,.mtab,.stab,.item,input,select,textarea,section,aside,dialog,.sim-card',
+        BOX='section,aside,dialog,.sim-card';
+  let last=null;
+  document.addEventListener('pointerover',e=>{
+    const t=e.target.closest&&e.target.closest(INT);
+    if(!t||t===last)return;last=t;
+    if(t.matches(BOX)){const n=Date.now();if(t._mg&&n-t._mg<3000)return;t._mg=n}
+    t.style.setProperty('--ih',nx());
+  },{passive:true});
+
+  let raf=0,ev=null;
+  document.addEventListener('pointermove',e=>{
+    ev=e;if(raf)return;
+    raf=requestAnimationFrame(()=>{raf=0;
+      const t=ev.target.closest&&ev.target.closest('section,aside,.item');
+      if(t){const r=t.getBoundingClientRect();
+        t.style.setProperty('--mx',(ev.clientX-r.left)+'px');t.style.setProperty('--my',(ev.clientY-r.top)+'px')}
+      if(aura){aura.style.opacity=1;aura.style.transform=`translate3d(${ev.clientX-190}px,${ev.clientY-190}px,0)`}
+    });
+  },{passive:true});
+
+  function ripple(b,e,h){
+    const r=b.getBoundingClientRect(),d=Math.max(r.width,r.height)*2.2,s=document.createElement('span');
+    s.className='mg-rip';
+    s.style.cssText=`left:${e.clientX-r.left-d/2}px;top:${e.clientY-r.top-d/2}px;width:${d}px;height:${d}px;--rh:${h}`;
+    b.appendChild(s);setTimeout(()=>s.remove(),750);
+  }
+  function burst(x,y,h){
+    const n=9;
+    for(let i=0;i<n;i++){
+      const s=document.createElement('i'),a=Math.PI*2*i/n+Math.random()*.6,d=26+Math.random()*44,
+            c=`hsl(${(h+i*18)%360} 95% 66%)`;
+      s.className='mg-spark';
+      s.style.cssText=`background:${c};box-shadow:0 0 10px ${c};left:${x-3}px;top:${y-3}px`;
+      fx.appendChild(s);
+      s.animate([{transform:'translate(0,0) scale(1)',opacity:1},
+                 {transform:`translate(${Math.cos(a)*d}px,${Math.sin(a)*d}px) scale(0)`,opacity:0}],
+                {duration:520+Math.random()*320,easing:'cubic-bezier(.15,.7,.3,1)'}).onfinish=()=>s.remove();
+    }
+  }
+  document.addEventListener('pointerdown',e=>{
+    const h=nx();bump(32);
+    if(aura)aura.style.setProperty('--ih',h);
+    const t=e.target.closest?e.target:null;if(!t)return;
+    const b=t.closest('button,.tab,.mtab,.stab');
+    if(b&&!b.disabled)ripple(b,e,h);
+    if(!rm&&!t.closest('#codeEditor,input,textarea,select'))burst(e.clientX,e.clientY,h);
+  },{passive:true});
+
+  document.addEventListener('focusin',e=>{
+    const t=e.target.closest&&e.target.closest('#codeEditor,input,select,textarea');
+    if(t){t.style.setProperty('--ih',nx());bump(22)}
+  });
+  document.addEventListener('change',()=>bump(18));
+})();
+</script>
+
 </body>
 </html>
