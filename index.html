@@ -849,8 +849,8 @@
       math:   set("abs ceil floor sqrt sin cos tan asin acos atan exp log fmod modf huge pi max min random randomseed tointeger type ult maxinteger mininteger"),
       utf8:   set("char charpattern codepoint len offset codes")
     };
-    const FORBIDDEN = set("load loadstring loadfile dofile require io os package coroutine debug");
-    const KNOWN = set("assert collectgarbage error getmetatable ipairs next pairs pcall print rawequal rawget rawlen rawset select setmetatable tonumber tostring type xpcall _G _VERSION string table math utf8 screen input storage sound imu device rgb mic app");
+    const FORBIDDEN = set("load loadstring loadfile dofile require io os package coroutine debug collectgarbage print warn rawset setmetatable getmetatable");
+    const KNOWN = set("assert error ipairs next pairs pcall rawequal rawget rawlen select tonumber tostring type xpcall _G _VERSION string table math utf8 screen input storage sound imu device rgb mic app");
     const CALLBACKS = { draw: [], on_touch: ["pad", "touched"], on_sw: ["pressed"], on_swipe: ["direction"], on_encoder: ["step"] };
     const HINTS = { unpack: "gunakan table.unpack", loadstring: "", setfenv: "tidak ada di Lua 5.4", getfenv: "tidak ada di Lua 5.4", bit: "gunakan operator & | ~ << >>", bit32: "gunakan operator & | ~ << >>" };
 
@@ -1044,13 +1044,24 @@
                 `${label} tidak valid (${s === "s" ? "harus string" : s === "v" ? "harus string, angka, atau boolean" : "harus angka"})`);
           else if (s === "n" && a.kind === "str" && !(a.value.trim() !== "" && isFinite(Number(a.value)))) add("error", t.line, t.col, `${label} harus angka, bukan string "${a.value.slice(0, 20)}"`);
         });
+        args.forEach((a, i) => {
+          if (spec[i] === "n" && a.kind === "num" && !Number.isInteger(a.value))
+            add("error", a.line || t.line, a.col || t.col, `argumen ke-${i + 1} ${name} harus bilangan bulat (pecahan menghentikan aplikasi: "number has no integer representation")`);
+        });
+        if (/^storage\.(get|set|remove)$/.test(name) && args[0] && args[0].kind === "str") {
+          const k = args[0].value, kb = new TextEncoder().encode(k).length;
+          if (kb < 1 || kb > 15) add("error", t.line, t.col, `${name}: kunci harus 1–15 byte (kunci ini ${kb} byte)`);
+          else if (k === "__owner") add("error", t.line, t.col, `${name}: kunci "__owner" dicadangkan firmware`);
+        }
+        if (name === "storage.set" && args[1] && args[1].kind === "str" && new TextEncoder().encode(args[1].value).length > 1023)
+          add("error", t.line, t.col, "storage.set: string maksimal 1023 byte");
         if (name === "screen.text" && args[2] && args[2].kind === "str") {
           const v = args[2].value;
           if (/[^\x00-\x7F]/.test(v)) add("warning", t.line, t.col, "screen.text: karakter non-ASCII diabaikan firmware");
           if (v.length > 120) add("warning", t.line, t.col, `screen.text: teks ${v.length} byte melebihi batas 120 byte`);
         }
         if (name === "input.touch" && args[0] && args[0].kind === "num" && !(Number.isInteger(args[0].value) && args[0].value >= 1 && args[0].value <= 4))
-          add("warning", t.line, t.col, "input.touch: pad harus 1 sampai 4");
+          add("error", t.line, t.col, "input.touch: pad harus 1 sampai 4 (di luar itu menghentikan aplikasi)");
         if (name === "rgb.set") {
           args.slice(0, 3).forEach((a, i) => {
             if (a.kind === "num" && !(Number.isInteger(a.value) && a.value >= 0 && a.value <= 255))
@@ -1058,8 +1069,8 @@
           });
         }
         if (name === "sound.buzzer") {
-          if (args[0] && args[0].kind === "num" && (args[0].value < 100 || args[0].value > 10000)) add("warning", t.line, t.col, "sound.buzzer: frekuensi harus 100–10.000 Hz (di luar itu diabaikan)");
-          if (args[1] && args[1].kind === "num" && (args[1].value < 1 || args[1].value > 2000)) add("warning", t.line, t.col, "sound.buzzer: durasi harus 1–2.000 ms");
+          if (args[0] && args[0].kind === "num" && (args[0].value < 100 || args[0].value > 10000)) add("error", t.line, t.col, "sound.buzzer: frekuensi harus 100–10.000 Hz (di luar itu menghentikan aplikasi)");
+          if (args[1] && args[1].kind === "num" && (args[1].value < 1 || args[1].value > 2000)) add("error", t.line, t.col, "sound.buzzer: durasi harus 1–2.000 ms (di luar itu menghentikan aplikasi)");
         }
       }
 
@@ -1441,7 +1452,7 @@
         if (globalAssigned.has(r.name) || seen.has(r.name)) continue;
         if (FORBIDDEN.has(r.name)) {
           seen.add(r.name);
-          add("error", r.line, r.col, `'${r.name}' tidak tersedia di sandbox VynWatch (dibuang: load/dofile/require, io, os, package, coroutine, debug)`);
+          add("error", r.line, r.col, `'${r.name}' tidak tersedia di sandbox VynWatch (dibuang firmware: load, loadfile, dofile, collectgarbage, print, warn, rawset, setmetatable, getmetatable; io, os, package, coroutine, debug tidak dibuka)`);
         } else if (!KNOWN.has(r.name)) {
           seen.add(r.name);
           const h = HINTS[r.name];
@@ -1636,23 +1647,32 @@
   // device.time() = TABEL {weekday(1=Sen..7=Min), day, month, year, hour, minute, second}; nil bila belum sinkron.
   // storage.* bertipe seperti firmware: integer / float32 / boolean / string dikembalikan dengan tipe aslinya; set() -> true, remove() -> apakah kunci ada.
   // Fungsi host dipasang sebagai global "__h_*" lalu diambil ke tabel lokal H (lebih cepat daripada proxy objek) dan dihapus dari _G.
+  // Tahap 1: samakan pustaka dengan firmware (hanya base, table, string, math, utf8) sebelum baseline memori diukur
+  const LUA_BOOT = `
+local collect = collectgarbage
+__cap = { collect = collect, sethook = debug.sethook }
+local loaded = debug.getregistry()._LOADED
+for _, n in ipairs({"io", "os", "coroutine", "debug", "package"}) do loaded[n] = nil; _G[n] = nil end
+collect(); collect()
+`;
   const LUA_PRELUDE = `
 local H = {}
 for k, v in pairs(_G) do if type(k) == "string" and k:sub(1, 4) == "__h_" then H[k:sub(5)] = v end end
 for k in pairs(H) do _G["__h_" .. k] = nil end
-local load, type, tostring, tonumber, select, concat = load, type, tostring, tonumber, select, table.concat
-function __run(src) local f, e = load(src, "=app", "t"); if not f then error(e, 0) end f() end
-function __call(name, ...) local f = _G[name]; if type(f) ~= "function" then return false end f(...); return true end
+local collect, sethook = __cap.collect, __cap.sethook
+__cap = nil
+local load, type, tostring, tonumber = load, type, tostring, tonumber
+-- Anggaran instruksi seperti budgetHook di firmware: 30.000 instruksi per panggilan, diperiksa tiap 1.000
+local BUDGET, left = 30000, 0
+local function onbudget() left = left - 1000; if left <= 0 then error("instruction budget exceeded", 2) end end
+function __run(src) local f, e = load(src, "=app", "t"); if not f then error(e, 0) end left = BUDGET; sethook(onbudget, "", 1000); f(); sethook() end
+function __call(name, ...) local f = _G[name]; if type(f) ~= "function" then return false end left = BUDGET; sethook(onbudget, "", 1000); f(...); sethook(); return true end
 local mtype = math.type
 local function numstr(v) if type(v) == "number" then return tostring(v) end return v end   -- seperti lua_tolstring: 3.0 -> "3.0"
-local text, rect, circle = H.text, H.rect, H.circle
+local text = H.text
 screen = {
   text = function(x, y, s) text(x, y, numstr(s)) end,
-  line = H.line,
-  rect = function(x, y, w, hh) rect(x, y, w, hh, 0) end,
-  fill_rect = function(x, y, w, hh) rect(x, y, w, hh, 1) end,
-  circle = function(x, y, r) circle(x, y, r, 0) end,
-  fill_circle = function(x, y, r) circle(x, y, r, 1) end,
+  line = H.line, rect = H.rect, fill_rect = H.frect, circle = H.circle, fill_circle = H.fcircle,
   width = function() return 128 end, height = function() return 64 end }
 input = { touch = H.touch, sw = H.sw, millis = H.millis }
 storage = {
@@ -1665,12 +1685,13 @@ imu = { angle = function() return tonumber(H.imu(1)), tonumber(H.imu(2)), tonumb
 device = { battery = H.battery, temperature = function() return tonumber(H.temp()) end,
   time = function() local w = H.time(1); if w == nil then return nil end
     return { weekday = w, day = H.time(2), month = H.time(3), year = H.time(4), hour = H.time(5), minute = H.time(6), second = H.time(7) } end }
-rgb = { set = function(r, g, b) H.rgb(r, g, b) end, auto = function() H.rgbAuto() end }
+rgb = { set = H.rgb, auto = H.rgbAuto }
 mic = { level = H.mic }
 app = { id = H.appid, name = H.appname, keep_alive = H.keep }
-print = function(...) local t = {} for i = 1, select("#", ...) do t[i] = tostring((select(i, ...))) end H.log(concat(t, " ")) end
-for _, n in ipairs({"load","loadstring","loadfile","dofile","require","io","os","package","coroutine","debug"}) do _G[n] = nil end
+-- dibuang firmware (removeGlobal): dofile loadfile load collectgarbage print warn rawset setmetatable getmetatable
+for _, n in ipairs({"load","loadstring","loadfile","dofile","require","io","os","package","coroutine","debug","collectgarbage","print","warn","rawset","setmetatable","getmetatable"}) do _G[n] = nil end
 string.dump = nil
+function __gc() collect(); collect() end
 `;
 
   const sim = (() => {
@@ -1928,40 +1949,61 @@ string.dump = nil
     ["pointerup", "pointercancel"].forEach(t => cap.addEventListener(t, () => setSw(false)));
 
     // ---------- Host API untuk Lua ----------
-    const N = (v, fn, i) => { const n = typeof v === "number" ? v : (typeof v === "string" && v.trim() !== "" ? Number(v) : NaN); if (!isFinite(n)) throw new Error(`argumen ke-${i} ${fn} harus angka`); return n; };
+    // Argumen & galat meniru app_lua.cpp: luaL_checkinteger menolak pecahan/NaN/tak hingga; galat berbentuk "bad argument #n to 'fn' (...)"
+    const argErr = (fn, i, why) => new Error(`bad argument #${i} to '${fn.split(".").pop()}' (${why})`);
+    const tname = v => v === undefined ? "no value" : v === null ? "nil" : typeof v === "boolean" ? "boolean" : typeof v === "string" ? "string" : typeof v === "function" ? "function" : "table";
+    const NI = (v, fn, i) => {   // luaL_checkinteger (lua_Integer 64-bit)
+      let n = v;
+      if (typeof v === "string") { n = v.trim() !== "" ? Number(v) : NaN; if (!Number.isFinite(n)) throw argErr(fn, i, "number expected, got string"); }
+      else if (typeof v !== "number") throw argErr(fn, i, `number expected, got ${tname(v)}`);
+      if (!Number.isInteger(n) || n >= 2 ** 63 || n < -(2 ** 63)) throw argErr(fn, i, "number has no integer representation");
+      return n;
+    };
+    const N = (v, fn, i) => NI(v, fn, i) | 0;   // (int) di firmware
     // Firmware menjepit (constrain) semua argumen gambar, bukan memotongnya: x 0..127, y 12..63 (12 baris atas = header), w 0..128, h 0..64, r 0..32
-    const Q = (v, lo, hi) => Math.min(hi, Math.max(lo, Math.trunc(v)));
-    const Sx = (v, fn, i) => { if (typeof v === "string") return v; if (typeof v === "number") return String(v); throw new Error(`argumen ke-${i} ${fn} harus string`); };
+    const Q = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const Sx = (v, fn, i) => { if (typeof v === "string") return v; if (typeof v === "number") return String(v); throw argErr(fn, i, `string expected, got ${tname(v)}`); };
+    const bytesOf = str => new TextEncoder().encode(str).length;
+    const Key = (v, fn) => {   // checkStorageKey
+      const k = Sx(v, fn, 1), len = bytesOf(k);
+      if (len < 1 || len > 15) throw argErr(fn, 1, "key must contain 1..15 bytes");
+      if (k.includes("\0")) throw argErr(fn, 1, "key must not contain NUL");
+      if (k === "__owner") throw argErr(fn, 1, "key is reserved");
+      return k;
+    };
+    const R = (fn, f) => (x, y, w, hh) => rectP(Q(N(x, fn, 1), 0, 127), Q(N(y, fn, 2), 12, 63), Q(N(w, fn, 3), 0, 128), Q(N(hh, fn, 4), 0, 64), f);
+    const C = (fn, f) => (x, y, r) => circ(Q(N(x, fn, 1), 0, 127), Q(N(y, fn, 2), 12, 63), Q(N(r, fn, 3), 0, 32), f);
     const host = () => ({
       appid: $("id").value.trim(), appname: $("name").value.trim(),
       text: (x, y, s) => text(Q(N(x, "screen.text", 1), 0, 127), Q(N(y, "screen.text", 2), 12, 63), Sx(s, "screen.text", 3)),
       line: (a, b, c, d) => line(Q(N(a, "screen.line", 1), 0, 127), Q(N(b, "screen.line", 2), 12, 63), Q(N(c, "screen.line", 3), 0, 127), Q(N(d, "screen.line", 4), 12, 63)),
-      rect: (x, y, w, hh, f) => rectP(Q(N(x, "screen.rect", 1), 0, 127), Q(N(y, "screen.rect", 2), 12, 63), Q(N(w, "screen.rect", 3), 0, 128), Q(N(hh, "screen.rect", 4), 0, 64), f),
-      circle: (x, y, r, f) => circ(Q(N(x, "screen.circle", 1), 0, 127), Q(N(y, "screen.circle", 2), 12, 63), Q(N(r, "screen.circle", 3), 0, 32), f),
-      touch: p => { p = N(p, "input.touch", 1); return p >= 1 && p <= 4 ? padDown[p - 1] : false; },
+      rect: R("screen.rect", 0), frect: R("screen.fill_rect", 1), circle: C("screen.circle", 0), fcircle: C("screen.fill_circle", 1),
+      touch: p => { p = N(p, "input.touch", 1); if (!(p >= 1 && p <= 4)) throw argErr("input.touch", 1, "pad must be 1..4"); return padDown[p - 1]; },
       sw: () => swDown, millis: () => Math.floor(performance.now() - t0) >>> 0,
-      sget: k => { k = Sx(k, "storage.get", 1); return Object.prototype.hasOwnProperty.call(store, k) ? store[k].v : undefined; },
+      sget: k => { k = Key(k, "storage.get"); return Object.prototype.hasOwnProperty.call(store, k) ? store[k].v : undefined; },
       sgett: k => Object.prototype.hasOwnProperty.call(store, k) ? store[k].t : undefined,
       sset: (k, v, kind) => {
-        k = Sx(k, "storage.set", 1);
-        if (kind === "string") store[k] = { t: "s", v: String(v) };
+        k = Key(k, "storage.set");
+        if (kind === "string") { if (bytesOf(v) > 1023) throw argErr("storage.set", 2, "string value must be at most 1023 bytes"); if (v.includes("\0")) throw argErr("storage.set", 2, "string value must not contain NUL"); store[k] = { t: "s", v: String(v) }; }
         else if (kind === "boolean") store[k] = { t: "b", v: !!v };
         else if (kind === "integer") store[k] = { t: "i", v: v | 0 };   // firmware: (long) 32-bit
-        else if (kind === "float") { const f = Math.fround(v); if (!isFinite(f)) throw new Error("argumen ke-2 storage.set: angka harus terbatas (bukan NaN/tak hingga)"); store[k] = { t: "f", v: f }; }
-        else throw new Error("argumen ke-2 storage.set: nilai harus string, angka, atau boolean");
+        else if (kind === "float") { const f = Math.fround(v); if (!isFinite(f)) throw argErr("storage.set", 2, "number must be finite"); store[k] = { t: "f", v: f }; }
+        else throw argErr("storage.set", 2, "value must be a string, number, or boolean");
         storeShow(); return true;
       },
-      sdel: k => { k = Sx(k, "storage.remove", 1); const had = Object.prototype.hasOwnProperty.call(store, k); delete store[k]; storeShow(); return had; },
+      sdel: k => { k = Key(k, "storage.remove"); const had = Object.prototype.hasOwnProperty.call(store, k); delete store[k]; storeShow(); return had; },
       buzzer: (f, d) => {
         f = N(f, "sound.buzzer", 1); d = N(d, "sound.buzzer", 2);
-        if (f < 100 || f > 10000 || d < 1 || d > 2000) return;
+        if (f < 100 || f > 10000) throw argErr("sound.buzzer", 1, "frequency must be 100..10000 Hz");
+        if (d < 1 || d > 2000) throw argErr("sound.buzzer", 2, "duration must be 1..2000 ms");
         beep(f, d, .05); $("buzTxt").textContent = `Buzzer: ${Math.round(f)} Hz, ${Math.round(d)} ms`;
       },
       imu: imuAt,   // string ber-desimal -> Lua tonumber() = float, seperti float firmware
       battery: () => Math.round(val("bat")), temp: () => val("temp").toFixed(2), mic: () => Math.round(val("mic")),
       time: i => { const t = nowParts(); return t ? t[i - 1] : undefined; },
       rgb: (r, g, b) => {
-        for (const [v, n, ix] of [[r, "merah", 1], [g, "hijau", 2], [b, "biru", 3]]) { const x = N(v, "rgb.set", ix); if (!Number.isInteger(x) || x < 0 || x > 255) throw new Error(`rgb.set: ${n} harus bilangan bulat 0–255`); }
+        for (const [v, n, ix] of [[r, "red", 1], [g, "green", 2], [b, "blue", 3]]) { const x = NI(v, "rgb.set", ix); if (x < 0 || x > 255) throw argErr("rgb.set", ix, `${n} must be 0..255`); }
+        [r, g, b] = [r, g, b].map(Number);
         $("led").style.background = `rgb(${r},${g},${b})`; $("led").style.boxShadow = `0 0 18px rgb(${r},${g},${b})`; $("ledTxt").textContent = `LED: rgb(${r}, ${g}, ${b})`;
       },
       rgbAuto: () => ledAuto(),
@@ -2032,11 +2074,17 @@ string.dump = nil
         const f = await loadLua(p => { if (my === runId) loader.set(p); });
         if (my !== runId) return;
         loader.set(75);
-        const e2 = await f.createEngine({ functionTimeout: 600 });   // perangkat: ±30.000 instruksi/panggilan; waktu di sini hanya pengaman loop tak berujung
+        const e2 = await f.createEngine({ functionTimeout: 600, traceAllocations: true });   // anggaran 30.000 instruksi dipasang di prelude (hook); traceAllocations untuk batas memori 48 KB
         if (my !== runId) { try { e2.global.close(); } catch (e) {} return; }
         eng = e2; loader.set(86);
         for (const [k, v] of Object.entries(host())) eng.global.set("__h_" + k, v);
+        await eng.doString(LUA_BOOT);
+        const memU1 = eng.global.getMemoryUsed();   // baseline setara firmware (5 pustaka + fungsi host)
         await eng.doString(LUA_PRELUDE);
+        const gc = eng.global.get("__gc"); gc(); eng.global.set("__gc", undefined);
+        // Batas 48 KB seperti limitedAllocator di firmware, di luar overhead prelude. +2,5 KB: closure fungsi host JS (≈4,2 KB) vs tabel API
+        // firmware (≈2,5 KB) dan thread per panggilan wasmoon. Hasilnya perkiraan (±1–2 KB), sengaja condong longgar agar tidak ada error palsu.
+        eng.global.setMemoryMax(48 * 1024 + 2560 + (eng.global.getMemoryUsed() - memU1));
         if (my !== runId) return;
         const runner = eng.global.get("__run"), dsp = eng.global.get("__call");
         eng.global.set("__run", undefined); eng.global.set("__call", undefined);   // disembunyikan dari program
