@@ -593,6 +593,7 @@
   <div class="sim-card" style="width:min(760px,100%)">
     <div class="sim-head">
       <h2 id="agTitle">AI Agent · <span id="agMode"></span></h2>
+      <select id="agProv" class="vbtn" aria-label="Penyedia AI" title="Penyedia AI"><option value="gemini">Gemini</option><option value="groq">Groq</option></select>
       <span id="agState"></span>
       <button type="button" id="agReset" class="vbtn">Reset</button>
       <button type="button" id="agClose">Tutup</button>
@@ -3610,7 +3611,7 @@ function __gc() collect(); collect() end
   })();
 
   // ======================================================================
-  // ===== AI Agent (Gemini lewat /api/agent; kunci di env var "API") =====
+  // ===== AI Agent (Gemini/Groq lewat /api/agent; kunci di env var "API" / "GROQ_API") =====
   // ======================================================================
   (() => {
     const AGENT_URL = "/api/agent", GUIDES = { app: "LUA-PROGRAMMING-GUIDE.md", face: "WATCHFACE-DSL-GUIDE.md" }, MAXFIX = 2;
@@ -3619,7 +3620,7 @@ function __gc() collect(); collect() end
     const saved = Draft.loadChat(), hist = saved.hist, view = saved.view, inDraft = saved.input, guides = {};
     const persist = () => Draft.saveChat({ hist, view, input: inDraft });
     let busy = false, ctl = null;
-    const setBusy = b => { busy = b; const el = $("agSend"); el.dataset.state = b ? "stop" : "send"; el.setAttribute("aria-label", b ? "Hentikan respons" : "Kirim"); el.title = b ? "Hentikan" : "Kirim"; };
+    const setBusy = b => { busy = b; $("agProv").disabled = b; const el = $("agSend"); el.dataset.state = b ? "stop" : "send"; el.setAttribute("aria-label", b ? "Hentikan respons" : "Kirim"); el.title = b ? "Hentikan" : "Kirim"; };
     const mode = () => document.querySelector(".mtab.active").dataset.main;
     const log = $("agLog"), ov = $("agOverlay"), openB = $("agOpen"), ID = /^[A-Za-z0-9_-]{1,24}$/;
 
@@ -3711,22 +3712,14 @@ function __gc() collect(); collect() end
         fail() { d.querySelectorAll(".agr.act").forEach(r => { r.className = "agr bad"; }); }
       };
     }
+    const provSel = $("agProv");
+    try { const v = localStorage.getItem("agProvider"); if (v === "gemini" || v === "groq") provSel.value = v; } catch { }
+    provSel.onchange = () => { try { localStorage.setItem("agProvider", provSel.value); } catch { } };
     async function call(m, msgs, onText, signal) {
-      const r = await fetch(AGENT_URL, { signal, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: m, guide: guides[m], messages: msgs }) });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || `HTTP ${r.status}`); }
-      const rd = r.body.getReader(), dec = new TextDecoder(); let buf = "", acc = "";
-      const take = ln => {
-        if (!ln.startsWith("data:")) return;
-        let j; try { j = JSON.parse(ln.slice(5)); } catch { return; }
-        if (j.error) throw new Error(j.error.message || "Galat dari AI.");
-        acc += (j.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("");
-      };
-      for (; ;) {
-        const { done, value } = await rd.read(); if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split("\n"); buf = lines.pop(); lines.forEach(take); onText(acc);
-      }
-      take(buf.trim()); onText(acc);
+      const r = await fetch(AGENT_URL, { signal, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: m, provider: provSel.value, guide: guides[m], messages: msgs }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      const acc = j.text || ""; onText(acc);
       return acc;
     }
 
