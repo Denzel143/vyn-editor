@@ -173,6 +173,8 @@
     #vLayers { list-style:none; margin:0; padding:0; max-height:320px; overflow:auto; }
     #vLayers li { padding:6px 8px; border:1px solid var(--line); border-radius:8px; margin-bottom:4px; font-size:12px; cursor:pointer; color:var(--sub); }
     #vLayers li.on { border-color:var(--accent); color:var(--text); }
+    #vLayers li.top { border-color:#ffd23f; }
+    #vLayers li.top.on { box-shadow:0 0 0 1px #ffd23f; }
     #vLayers li b { color:var(--accent); font-family:ui-monospace, monospace; margin-right:4px; }
     .vgrid { display:grid; grid-template-columns:auto 1fr; align-items:center; gap:6px 10px; }
     .vgrid label { margin:0; font-size:12px; }
@@ -2300,11 +2302,15 @@ function __gc() collect(); collect() end
     }
 
     // ---------- Penggambar ala Adafruit_GFX ----------
+    // Baris 0-10 dipakai overlay firmware (indikator baterai, pil Timer/Alarm). Elemen yang menggambar di sana hanya mengganggu visual.
+    const TOP_ROWS = 11;
+    const touchesTop = (o, s) => !!(s && s.top > 0 && !(o.op === "S" && o.p[2] === 2));   // ikon baterai (S,x,y,2) memang di sana
     class Renderer {
-      constructor() { this.fb = new Uint8Array(W * H); this.col = 1; this.inN = 0; this.outN = 0; }
+      constructor() { this.fb = new Uint8Array(W * H); this.col = 1; this.inN = 0; this.outN = 0; this.topN = 0; }
       px(x, y, c) {
         if (x < 0 || x >= W || y < 0 || y >= H) { this.outN++; return; }
         this.fb[y * W + x] = c ? 1 : 0; this.inN++;
+        if (y < TOP_ROWS) this.topN++;
       }
       fillRect(x, y, w, h, c) {
         if (w <= 0 || h <= 0) return;
@@ -2315,6 +2321,7 @@ function __gc() collect(); collect() end
           for (let yy = y0; yy < y1; yy++) this.fb.fill(c ? 1 : 0, yy * W + x0, yy * W + x1);
         }
         this.inN += inside; this.outN += w * h - inside;
+        if (inside && y0 < TOP_ROWS) this.topN += (x1 - x0) * (Math.min(y1, TOP_ROWS) - y0);
       }
       hline(x, y, w, c) { this.fillRect(x, y, w, 1, c); }
       vline(x, y, h, c) { this.fillRect(x, y, 1, h, c); }
@@ -2429,13 +2436,13 @@ function __gc() collect(); collect() end
       }
 
       run(ops, st, stats) {
-        this.fb.fill(0); this.col = 1; this.inN = 0; this.outN = 0;
+        this.fb.fill(0); this.col = 1; this.inN = 0; this.outN = 0; this.topN = 0;
         for (let i = 0; i < ops.length; i++) {
           const o = ops[i];
           if (!o.valid) continue;
-          const i0 = this.inN, o0 = this.outN;
+          const i0 = this.inN, o0 = this.outN, t0 = this.topN;
           this.exec(o, st);
-          if (stats) stats[i] = { inside: this.inN - i0, outside: this.outN - o0 };
+          if (stats) stats[i] = { inside: this.inN - i0, outside: this.outN - o0, top: this.topN - t0 };
         }
       }
 
@@ -2678,13 +2685,14 @@ function __gc() collect(); collect() end
           if (s.inside === 0 && s.outside > 0) add("warning", o.line, o.col, `${o.op}: seluruh gambar berada di luar layar 128×64.`);
           else if (s.outside > 0) add("warning", o.line, o.col, `${o.op}: sebagian gambar (±${s.outside} piksel) terpotong di luar layar 128×64.`);
           else if (s.inside === 0 && !(o.op === "L" && o.t === "")) add("warning", o.line, o.col, `${o.op}: tidak menggambar apa pun (parameter nol?).`);
+          if (touchesTop(o, s)) add("warning", o.line, o.col, `${o.op}: elemen melewati batas atas area yang disarankan (baris 0–10 dipakai overlay baterai dan alarm/timer); tidak bermasalah, hanya mengganggu visual.`);
         });
       }
       diags.sort((a, b) => a.line - b.line || a.col - b.col);
       return { ok: !hasErr, ops, canon, bytes, count: known.length, diags };
     }
 
-    return { analyze, Renderer, TAGS, LIMIT, OPS, CHECK_STATE, timeStr };
+    return { analyze, Renderer, TAGS, LIMIT, OPS, CHECK_STATE, timeStr, touchesTop };
   })();
   if (typeof module !== "undefined") module.exports = FACE;
 
@@ -3025,6 +3033,7 @@ function __gc() collect(); collect() end
     const mv = (e, o, dx, dy) => IDX(e).forEach((i, k) => { e.p[i] = cl(o[i] + (k % 2 ? dy : dx), -1000, 1000); });
 
     // ---------- Menggambar ----------
+    let topSet = new Set();
     function draw() {
       if ($("panelFace").hidden || $("vSec").hidden || document.hidden) return;
       const st = vState();
@@ -3045,10 +3054,21 @@ function __gc() collect(); collect() end
       const g = $("vDot").checked ? 1 : 0; ctx.fillStyle = "#e9f6ff";
       for (let i = 0; i < 8192; i++) if (R.fb[i]) ctx.fillRect((M + (i & 127)) * S, (M + (i >> 7)) * S, S - g, S - g);
       ctx.strokeStyle = "#303b42"; ctx.lineWidth = 1; ctx.strokeRect(M * S - .5, M * S - .5, 128 * S + 1, 64 * S + 1);
+      // Elemen yang menyentuh zona atas (overlay baterai / alarm / timer): kotak kuning, tipis bila tidak dipilih
+      const gs0 = gst(st), tst = [];
+      SC.run(els.map(e => ({ op: e.op, p: e.p, t: e.t, valid: true })), gs0, tst);
+      topSet = new Set();
+      els.forEach((e, i) => { if (FACE.touchesTop(e, tst[i])) topSet.add(i); });
+      $("vLayers").querySelectorAll("li[data-i]").forEach(li => li.classList.toggle("top", topSet.has(+li.dataset.i)));
+      topSet.forEach(i => {
+        if (i === sel) return;
+        const tb = box(els[i], gs0);
+        if (tb) { ctx.strokeStyle = "#ffd23f"; ctx.lineWidth = 1; ctx.strokeRect((M + tb[0]) * S - .5, (M + tb[1]) * S - .5, (tb[2] - tb[0]) * S + 1, (tb[3] - tb[1]) * S + 1); }
+      });
       const e = els[sel];
       if (e) {
-        const gs = gst(st), bb = box(e, gs);
-        if (bb) { ctx.strokeStyle = "#54d7c9"; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeRect((M + bb[0]) * S, (M + bb[1]) * S, (bb[2] - bb[0]) * S, (bb[3] - bb[1]) * S); ctx.setLineDash([]); }
+        const gs = gs0, bb = box(e, gs);
+        if (bb) { ctx.strokeStyle = topSet.has(sel) ? "#ffd23f" : "#54d7c9"; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeRect((M + bb[0]) * S, (M + bb[1]) * S, (bb[2] - bb[0]) * S, (bb[3] - bb[1]) * S); ctx.setLineDash([]); }
         hnd(e, bb, gs).forEach(h => { ctx.fillStyle = "#54d7c9"; ctx.strokeStyle = "#09201d"; ctx.lineWidth = 1; ctx.fillRect((M + h.x) * S - 5, (M + h.y) * S - 5, 10, 10); ctx.strokeRect((M + h.x) * S - 5, (M + h.y) * S - 5, 10, 10); });
       }
     }
@@ -3067,7 +3087,7 @@ function __gc() collect(); collect() end
     }
     const lazy = () => { clearTimeout(hT); hT = setTimeout(push, 400); };
     function layers() {
-      $("vLayers").innerHTML = els.map((e, i) => i).reverse().map(i => `<li data-i="${i}" class="${i === sel ? "on" : ""}"><b>${els[i].op}</b>${esc(desc(els[i]))}</li>`).join("") || '<li class="hint">Belum ada elemen.</li>';
+      $("vLayers").innerHTML = els.map((e, i) => i).reverse().map(i => `<li data-i="${i}" class="${i === sel ? "on" : ""}${topSet.has(i) ? " top" : ""}"><b>${els[i].op}</b>${esc(desc(els[i]))}</li>`).join("") || '<li class="hint">Belum ada elemen.</li>';
     }
     function buildInsp() {
       const box = $("vInsp"); insp = []; box.innerHTML = "";
