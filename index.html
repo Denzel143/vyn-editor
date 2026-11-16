@@ -574,6 +574,28 @@ dialog::backdrop{background:radial-gradient(60% 60% at 30% 20%,rgba(139,92,255,.
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01s!important;animation-iteration-count:1!important;transition-duration:.01s!important}
   #mgAura{display:none}}
+
+/* ===== Batch 1: fitur & UX ===== */
+aside h2 small{font-size:12px;font-weight:500;color:var(--sub);margin-left:6px}
+#dbSearch{margin:0 0 12px;padding:10px 12px;font-size:13px}
+.empty{margin:0;padding:22px 12px;text-align:center;border:1px dashed var(--line);border-radius:10px;font-size:13px}
+.item.sk{height:58px;border-color:transparent;background:linear-gradient(100deg,#17181b 30%,#26282c 50%,#17181b 70%) 0 0/220% 100%;animation:mgsk 1.4s linear infinite}
+@keyframes mgsk{to{background-position:-120% 0}}
+.item.is-loaded{border-color:hsl(var(--ih,170) 80% 60%/.8);box-shadow:inset 3px 0 0 var(--glow)}
+.item.is-loaded .item-name::after{content:" · sedang diedit";font-weight:400;font-size:11px;color:var(--sub)}
+.item-id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vbump{display:flex;gap:6px;margin-top:6px}
+.vbump .vbtn{min-height:28px!important;padding:3px 10px!important;font-size:12px}
+.tab:focus-visible,.mtab:focus-visible,.stab:focus-visible{outline:2px solid var(--glow);outline-offset:2px}
+#delConfirm button[value="yes"]{color:#2a0805;background:var(--warn)}
+#delConfirm button[value="yes"]:hover{box-shadow:0 8px 28px -8px rgba(255,120,100,.8)}
+#mgToasts{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:10000;display:flex;flex-direction:column;gap:8px;width:min(440px,calc(100% - 24px));pointer-events:none}
+.mg-toast{pointer-events:auto;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;font-size:13px;line-height:1.4;color:var(--text);
+  border:1.5px solid transparent;background:linear-gradient(#1f2023,#1f2023) padding-box,var(--conic) border-box;animation:mgspin 5s linear infinite,mgin .35s cubic-bezier(.2,.8,.2,1);box-shadow:0 14px 40px -12px #000c,0 0 40px -14px var(--glow)}
+.mg-toast.bad{background:linear-gradient(#26191a,#26191a) padding-box,linear-gradient(120deg,#ff8b81,#ffb86b) border-box;animation:mgin .35s cubic-bezier(.2,.8,.2,1)}
+.mg-toast.out{opacity:0;transform:translateY(8px);transition:opacity .25s,transform .25s}
+.mg-toast span{flex:1}.mg-toast button{margin:0;padding:6px 12px;font-size:12px;min-height:0}
+@keyframes mgin{from{opacity:0;transform:translateY(14px) scale(.97)}}
 </style>
 </head>
 <body>
@@ -690,14 +712,15 @@ dialog::backdrop{background:radial-gradient(60% 60% at 30% 20%,rgba(139,92,255,.
 </main>
 
 <aside>
-  <h2>Database</h2>
+  <h2>Database <small id="dbCount"></small></h2>
+  <input id="dbSearch" type="search" placeholder="Cari nama, ID, kategori…  (Ctrl+K)" aria-label="Cari di database" autocomplete="off">
   <div class="tabs">
     <div class="tab active" data-tab="game">Games</div>
     <div class="tab" data-tab="app">Apps</div>
     <div class="tab" data-tab="face">Faces</div>
   </div>
   <div class="item-list" id="itemList">
-    <p class="empty">Memuat…</p>
+    <div class="item sk"></div><div class="item sk"></div><div class="item sk"></div><div class="item sk"></div>
   </div>
 </aside>
 
@@ -785,6 +808,16 @@ dialog::backdrop{background:radial-gradient(60% 60% at 30% 20%,rgba(139,92,255,.
     <div class="grid">
       <button type="submit" value="no">Tidak</button>
       <button type="submit" value="yes">Ya, update</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="delConfirm">
+  <form method="dialog">
+    <h2>Hapus dari database?</h2>
+    <p id="delConfirmMessage"></p>
+    <div class="grid">
+      <button type="submit" value="no">Batal</button>
+      <button type="submit" value="yes">Ya, hapus</button>
     </div>
   </form>
 </dialog>
@@ -882,6 +915,7 @@ dialog::backdrop{background:radial-gradient(60% 60% at 30% 20%,rgba(139,92,255,.
 
   // Sidebar Logic
   let currentTab = 'game';
+  let loadedKey = '';
   let appsData = {};
   let facesData = {};
 
@@ -898,15 +932,20 @@ dialog::backdrop{background:radial-gradient(60% 60% at 30% 20%,rgba(139,92,255,.
   });
 
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const confirmDelete = message => new Promise(resolve => {
+    const dialog = $("delConfirm");
+    $("delConfirmMessage").textContent = message;
+    dialog.returnValue = "";
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "yes"), { once: true });
+    dialog.showModal();
+  });
   const deleteItem = async (path, id, name) => {
-    if (confirm(`Hapus permanen "${name}" (${id}) dari Firebase RTDB?`)) {
-      try {
-        await remove(ref(db, `${path}/${id}`));
-        alert(`Berhasil menghapus ${id}`);
-      } catch (err) {
-        alert(`Gagal menghapus: ${err.message}`);
-      }
-    }
+    const snap = path === 'watchfaces' ? facesData[id] : appsData[id];
+    if (!(await confirmDelete(`Hapus permanen "${name}" (${id}) dari Firebase RTDB? Kamu masih bisa mengurungkannya beberapa detik setelah ini.`))) return;
+    try {
+      await remove(ref(db, `${path}/${id}`));
+      window.mgToast(`"${name}" dihapus`, "ok", 9000, snap ? { label: "Urungkan", run: () => set(ref(db, `${path}/${id}`), snap).then(() => window.mgToast(`"${name}" dipulihkan`, "ok")).catch(e => window.mgToast(`Gagal memulihkan: ${e.message}`, "bad")) } : null);
+    } catch (err) { window.mgToast(`Gagal menghapus: ${err.message}`, "bad", 6000); }
   };
 
   function renderSidebar() {
@@ -914,22 +953,28 @@ dialog::backdrop{background:radial-gradient(60% 60% at 30% 20%,rgba(139,92,255,.
     list.innerHTML = "";
     const isFace = currentTab === 'face';
     const path = isFace ? 'watchfaces' : 'apps';
-    const entries = isFace
+    let entries = isFace
       ? Object.entries(facesData).filter(([id, data]) => data && typeof data === 'object')
       : Object.entries(appsData).filter(([id, data]) => data && data.type === currentTab);
 
+    const total = entries.length;
+    const q = ($("dbSearch").value || "").trim().toLowerCase();
+    if (q) entries = entries.filter(([id, d]) => `${d.name || ""} ${id} ${d.tag || ""}`.toLowerCase().includes(q));
+    $("dbCount").textContent = total ? (q ? `${entries.length}/${total}` : total) : "";
     if (entries.length === 0) {
-      list.innerHTML = `<p class="empty">Belum ada ${isFace ? 'watch face' : currentTab}.</p>`;
+      list.innerHTML = q
+        ? `<p class="empty">Tidak ada hasil untuk "${esc(q)}".</p>`
+        : `<p class="empty">Belum ada ${isFace ? 'watch face' : currentTab}. Item yang kamu unggah akan muncul di sini.</p>`;
       return;
     }
 
     entries.forEach(([id, data]) => {
       const el = document.createElement("div");
-      el.className = "item";
+      el.className = "item" + (loadedKey === currentTab + ":" + id ? " is-loaded" : "");
       el.innerHTML = `
         <div class="item-info">
           <span class="item-name">${esc(data.name) || 'Tanpa Nama'}</span>
-          <span class="item-id">${esc(id)}${isFace && data.tag ? ' · ' + esc(data.tag) : ''}</span>
+          <span class="item-id">${esc(id)}${isFace && data.tag ? ' · ' + esc(data.tag) : ''}${data.version ? ' · v' + esc(data.version) : ''}</span>
         </div>
         <div class="item-actions">
           <button type="button" class="btn-load" data-id="${esc(id)}">Muat</button>
@@ -947,7 +992,11 @@ dialog::backdrop{background:radial-gradient(60% 60% at 30% 20%,rgba(139,92,255,.
     if (!l) return;
     if (currentTab === 'face') fLoadRecord({ id: l.dataset.id, ...(facesData[l.dataset.id] || {}) });
     else appLoadRecord({ id: l.dataset.id, ...(appsData[l.dataset.id] || {}) });
+    loadedKey = currentTab + ':' + l.dataset.id;
+    renderSidebar();
+    window.mgToast(`Dimuat ke editor: ${l.dataset.id}`, "ok", 2600);
   });
+  $("dbSearch").addEventListener("input", renderSidebar);
 
   // Fetch data in realtime
   onValue(ref(db, 'apps'), (snapshot) => {
@@ -1779,7 +1828,7 @@ dialog::backdrop{background:radial-gradient(60% 60% at 30% 20%,rgba(139,92,255,.
         );
         if (!confirmed) return;
         if (String(existing.version || "") === record.version) {
-          alert(`Versi "${record.version}" sama dengan versi yang sudah ada. Ubah versi terlebih dahulu. Isi pekerjaan Anda tetap tersimpan.`);
+          window.mgToast(`Versi "${record.version}" sama dengan versi yang sudah ada. Naikkan versi dulu; isi pekerjaanmu tetap tersimpan.`, "bad", 7000);
           status("Versi belum berubah.", true);
           return;
         }
@@ -3152,7 +3201,7 @@ function __gc() collect(); collect() end
         const confirmed = await confirmUpdate(`Watch face "${record.name}" (${record.id}) sudah ada di RTDB. Ganti versi ${existing.version || "tidak diketahui"} dengan ${record.version}?`);
         if (!confirmed) return;
         if (String(existing.version || "") === record.version) {
-          alert(`Versi "${record.version}" sama dengan versi yang sudah ada. Ubah versi terlebih dahulu. Isi pekerjaan Anda tetap tersimpan.`);
+          window.mgToast(`Versi "${record.version}" sama dengan versi yang sudah ada. Naikkan versi dulu; isi pekerjaanmu tetap tersimpan.`, "bad", 7000);
           fStatus("Versi belum berubah.", true);
           return;
         }
@@ -3985,5 +4034,55 @@ function __gc() collect(); collect() end
 })();
 </script>
 
+<script>
+/* Batch 1: toast, status->toast, cari (Ctrl+K), chip versi, saran ID, aksesibilitas tab */
+(()=>{
+  const $=id=>document.getElementById(id);
+  const box=document.createElement('div');box.id='mgToasts';box.setAttribute('role','status');box.setAttribute('aria-live','polite');document.body.appendChild(box);
+  window.mgToast=(msg,type='ok',ms=4000,act)=>{
+    const t=document.createElement('div');t.className='mg-toast '+(type==='bad'?'bad':'');
+    const sp=document.createElement('span');sp.textContent=msg;t.appendChild(sp);
+    const close=()=>{t.classList.add('out');setTimeout(()=>t.remove(),260)};
+    if(act){const b=document.createElement('button');b.type='button';b.textContent=act.label;b.onclick=()=>{close();act.run()};t.appendChild(b)}
+    while(box.children.length>=3)box.firstChild.remove();
+    box.appendChild(t);setTimeout(close,ms);
+  };
+  ['status','fStatus'].forEach(id=>{
+    const el=$(id);if(!el)return;let prev='',at=0;
+    new MutationObserver(()=>{
+      const t=el.textContent.trim(),n=Date.now();
+      if(!t||(t===prev&&n-at<1500))return;prev=t;at=n;
+      const bad=/warn/.test(el.style.color);
+      window.mgToast(t,bad?'bad':'ok',bad?6000:3200);
+    }).observe(el,{childList:true,characterData:true,subtree:true});
+  });
+  document.addEventListener('keydown',e=>{
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('dbSearch').focus();$('dbSearch').select()}
+  });
+  $('dbSearch').addEventListener('keydown',e=>{if(e.key==='Escape'&&e.target.value){e.target.value='';e.target.dispatchEvent(new Event('input'))}});
+  const bump=(v,k)=>{const m=/^(\d+)\.(\d+)\.(\d+)$/.exec(v.trim());let [a,b,c]=m?m.slice(1).map(Number):[1,0,0];
+    if(m){if(k==='major'){a++;b=0;c=0}else if(k==='minor'){b++;c=0}else c++}return a+'.'+b+'.'+c};
+  ['version','fVersion'].forEach(id=>{
+    const inp=$(id);if(!inp)return;const w=document.createElement('div');w.className='vbump';
+    w.innerHTML='<button type="button" class="vbtn" data-k="patch" title="1.0.0 → 1.0.1">+Patch</button><button type="button" class="vbtn" data-k="minor" title="1.0.0 → 1.1.0">+Minor</button><button type="button" class="vbtn" data-k="major" title="1.0.0 → 2.0.0">+Major</button>';
+    w.onclick=e=>{const b=e.target.closest('[data-k]');if(!b)return;inp.value=bump(inp.value,b.dataset.k);inp.dispatchEvent(new Event('input',{bubbles:true}))};
+    inp.insertAdjacentElement('afterend',w);
+  });
+  const slug=s=>s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  [['name','id',()=>$('type').value==='app'?'app_':'game_'],['fName','fId',()=>'face_']].forEach(([n,i,pre])=>{
+    const N=$(n),I=$(i);if(!N||!I)return;let auto=false;
+    I.addEventListener('input',e=>{if(e.isTrusted)auto=false});
+    N.addEventListener('input',e=>{
+      if(!e.isTrusted)return;
+      if(I.value&&!auto)return;
+      const sg=slug(N.value);I.value=sg?(pre()+sg).slice(0,24).replace(/_+$/,''):'';auto=true;
+      I.dispatchEvent(new Event('input',{bubbles:true}));
+    });
+  });
+  const T='.tab,.mtab,.stab',sync=()=>document.querySelectorAll(T).forEach(t=>{t.tabIndex=0;t.setAttribute('role','tab');t.setAttribute('aria-selected',t.classList.contains('active'))});
+  sync();document.querySelectorAll(T).forEach(t=>new MutationObserver(sync).observe(t,{attributes:true,attributeFilter:['class']}));
+  document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches(T)){e.preventDefault();e.target.click()}});
+})();
+</script>
 </body>
 </html>
