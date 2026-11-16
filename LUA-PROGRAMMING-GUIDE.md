@@ -1,6 +1,6 @@
 # Panduan Lua untuk Aplikasi VynWatch
 
-Program Apps dan Games yang diunduh dijalankan di firmware ESP32 menggunakan Lua 5.4. Ini Lua yang dibatasi agar sesuai dengan VynWatch, bukan akses Lua penuh ke perangkat. Program dapat menggambar pada OLED, membaca input perangkat, membaca sensor gerak, baterai, suhu chip, dan waktu, mengontrol LED RGB, membaca tingkat suara mikrofon, meminta pengguna mengetik teks lewat keyboard virtual, mengeluarkan bunyi buzzer, menyimpan state sementara maupun data persisten per aplikasi/game di NVS, dan menangani callback input.
+Program Apps dan Games yang diunduh dijalankan di firmware ESP32 menggunakan Lua 5.4. Ini Lua yang dibatasi agar sesuai dengan VynWatch, bukan akses Lua penuh ke perangkat. Seluruh akses perangkat melewati Device API berlapis (lihat [Arsitektur tiga lapisan dan Device API](#arsitektur-tiga-lapisan-dan-device-api)). Program dapat menggambar pada OLED, membaca input perangkat, membaca sensor gerak, baterai, suhu chip, dan waktu, mengontrol LED RGB, membaca tingkat suara mikrofon, meminta pengguna mengetik teks lewat keyboard virtual, mengeluarkan bunyi buzzer, menyimpan state sementara maupun data persisten per aplikasi/game di NVS, dan menangani callback input.
 
 ## Membuat paket aplikasi/game
 
@@ -71,6 +71,109 @@ Lua dasar yang digunakan di contoh:
 Pustaka standar yang tersedia: `base` (sebagian fungsi berbahaya dibuang), `table`, `string` (tanpa `string.dump`), `math`, dan `utf8`. Fungsi pemuatan kode, file, sistem operasi, package/module, coroutine, debug, dan akses jaringan tidak tersedia. Variabel lokal diinisialisasi ulang saat aplikasi dibuka lagi; gunakan API `storage` untuk data yang perlu bertahan.
 
 Untuk menyesuaikan runtime dengan toolchain ESP32, konfigurasi Lua menggunakan integer 32-bit dan floating-point 32-bit (`LUA_32BITS`). Hindari perhitungan yang mengandalkan integer 64-bit atau presisi `double`.
+
+## Arsitektur tiga lapisan dan Device API
+
+Akses perangkat dipisah menjadi tiga lapisan dengan tanggung jawab yang tidak boleh tercampur:
+
+```text
+[3] Aplikasi Lua            hanya memakai Device API: vyn.request(...) atau pembungkus lamanya
+        |
+[2] Broker Device API       src/vyn_api.cpp + app_lua.cpp
+        |                   skema tetap: nama resource, parameter, field, satuan, rentang
+        |                   validasi parameter -> panggil provider -> normalisasi hasil -> bentuk envelope
+[1] HAL (provider)          chatbox_esp32s3.ino, bagian "PROVIDER HAL"
+                            satu-satunya kode yang tahu MPU6050, ADC mikrofon/baterai, pad sentuh, buzzer, LED
+```
+
+Aturan yang dijamin firmware:
+
+- Aplikasi **tidak pernah** menerima data mentah sensor. Yang diterima hanya nilai kanonik: nama field, satuan, kerangka sumbu, dan rentang selalu sama.
+- Provider HAL **tidak pernah** menyentuh Lua. Ia hanya mengisi nilai sesuai skema; validasi dan format dilakukan broker.
+- Mengganti sensor atau board hanya mengubah provider terkait (`vynBind(...)`). Skema, aplikasi Lua, simulator, dan panduan ini tidak berubah, sehingga satu aplikasi berjalan di perangkat keras berbeda.
+- Resource yang tidak punya provider di suatu perangkat menghasilkan `error = "unsupported"`; aplikasi bisa memeriksanya lebih dulu dengan `vyn.has(resource)`.
+
+Kategori API:
+
+| Kategori | Isi | Cara akses |
+|---|---|---|
+| Data hardware (baca) | gerak, baterai, suhu, waktu, tingkat suara, status pad/SW, uptime | `vyn.request` |
+| Aktuator (perintah) | LED RGB, buzzer | `vyn.request` dengan params |
+| Event input | `on_touch`, `on_sw`, `on_swipe`, `on_encoder`, `on_text` | callback (format sudah kanonik) |
+| Layanan platform | `storage`, `keyboard.request`, `app.keep_alive`, metadata `app` | tabel masing-masing; bukan data hardware |
+| Permukaan gambar | `screen.*` (kanvas monokrom tetap 128x64) | tabel `screen`; ukuran juga ada di `device.info` |
+
+### `vyn.request(resource [, params])`
+
+Satu bentuk request untuk semua data perangkat. Hasilnya selalu tabel envelope yang sama:
+
+```lua
+-- sukses
+{ ok = true,  resource = "motion.orientation", ts = 123456, data = { pitch = 12.5, yaw = -3.0, roll = 0.4 } }
+-- gagal
+{ ok = false, resource = "motion.orientation", ts = 123456, error = "not_ready" }
+```
+
+| Field | Arti |
+|---|---|
+| `ok` | `true` bila `data` tersedia. |
+| `resource` | Nama resource yang diminta. |
+| `ts` | Waktu perangkat saat request dijawab, dalam ms (`millis()`). |
+| `data` | Tabel field sesuai skema (hanya bila `ok`). Field, tipe, satuan, dan rentangnya tetap. |
+| `error` | Hanya bila gagal: `unsupported`, `not_ready`, `busy`, `bad_param`, `unknown_resource`, atau `error`. |
+| `detail` | Penjelasan singkat untuk `bad_param` dan `error`. |
+
+`vyn.request` tidak melempar error Lua untuk kegagalan hardware atau parameter; periksa `ok`. Hanya argumen yang bukan string (nama) atau bukan tabel (params) yang melempar error. Pembungkus lama (`imu.angle()` dan lainnya) tetap berperilaku seperti sebelumnya: mengembalikan `nil` bila belum siap dan melempar error untuk parameter salah.
+
+Fungsi pendukung: `vyn.has(resource)` (boolean, ada provider atau tidak), `vyn.list()` (array nama resource yang didukung perangkat ini), `vyn.version` (versi API, saat ini `1`).
+
+### Daftar resource v1
+
+Resource baca (tanpa parameter kecuali disebut):
+
+| Resource | Field `data` | Satuan dan rentang | Pembungkus lama |
+|---|---|---|---|
+| `device.info` | `api`, `display_w`, `display_h`, `pads` | integer | - |
+| `system.uptime` | `ms` | ms sejak boot | `input.millis()` |
+| `system.time` | `weekday` (1=Sen..7=Min), `day`, `month`, `year`, `hour`, `minute`, `second` | integer; `not_ready` bila jam belum sinkron | `device.time()` |
+| `system.temperature` | `celsius` | float, -50..200 | `device.temperature()` |
+| `power.battery` | `percent` | integer 0..100 | `device.battery()` |
+| `motion.orientation` | `pitch`, `yaw`, `roll` | derajat; -90..90, -180..180, -180..180; kerangka layar | `imu.angle()` |
+| `motion.accel` | `x`, `y`, `z` | g; kerangka layar (X kanan, Y atas, Z keluar layar), termasuk gravitasi | `imu.accel()` |
+| `audio.level` | `level` | integer 0..100, skala relatif; `busy` bila mikrofon dipakai perekam suara | `mic.level()` |
+| `input.pad` (param `pad` 1..4, wajib) | `down` | boolean | `input.touch(pad)` |
+| `input.switch` | `down` | boolean | `input.sw()` |
+
+Resource perintah (tanpa `data`; sukses = `ok = true`):
+
+| Resource | Params | Keterangan | Pembungkus lama |
+|---|---|---|---|
+| `indicator.rgb` | `r`, `g`, `b` integer 0..255, atau `auto = true` | Mengambil alih LED dengan warna tetap, atau melepasnya ke ambient. | `rgb.set(r, g, b)`, `rgb.auto()` |
+| `audio.tone` | `freq` 100..10000 Hz, `ms` 1..2000 (keduanya wajib) | Dibunyikan lewat buzzer; diabaikan bila sistem dimute. | `sound.buzzer(freq, ms)` |
+
+Contoh:
+
+```lua
+function draw()
+  local o = vyn.request("motion.orientation")
+  if o.ok then
+    screen.text(4, 18, string.format("Roll: %d", math.floor(o.data.roll)))
+  else
+    screen.text(4, 18, "Sensor: " .. o.error)   -- not_ready / unsupported
+  end
+
+  if vyn.has("audio.level") then
+    local m = vyn.request("audio.level")
+    if m.ok then screen.fill_rect(4, 40, math.floor(m.data.level * 120 / 100), 8) end
+  end
+end
+
+function on_sw(pressed)
+  if pressed then vyn.request("indicator.rgb", { r = 255, g = 0, b = 0 }) end
+end
+```
+
+Menambah resource baru berarti: (1) tambah entri di tabel skema `src/vyn_api.cpp` dan `VynId` di `src/vyn_api.h`, (2) tulis provider di bagian "PROVIDER HAL" lalu `vynBind(...)`, (3) tambahkan definisi yang sama di prelude simulator dan di tabel ini.
 
 ## API perangkat
 
@@ -146,7 +249,9 @@ Contoh: `sound.buzzer(2200, 50)`.
 
 ### Sensor gerak (IMU)
 
-Nilai dibaca dari MPU6050 yang sudah difilter firmware (filter Kalman). Hanya nilai sudut dan percepatan yang tersedia; tidak ada data mentah gyro atau log.
+> `imu.*`, `device.*`, `rgb.*`, `mic.*`, `sound.buzzer`, dan `input.touch/sw/millis` adalah pembungkus tipis di atas `vyn.request` (tabel resource di atas). Data, satuan, dan rentangnya identik.
+
+Nilai berasal dari resource `motion.*`; pada perangkat ini sumbernya MPU6050 yang sudah difilter firmware (filter Kalman), tetapi aplikasi hanya melihat nilai kanonik. Hanya nilai sudut dan percepatan yang tersedia; tidak ada data mentah gyro atau log.
 
 | Fungsi | Hasil |
 |---|---|
@@ -422,5 +527,5 @@ Thumbnail OLED berukuran 16×16 piksel, monokrom, MSB-first. Representasi hex-ny
 - Jangan pernah memasukkan kredensial, token, atau rahasia dalam source program.
 - Sandbox tidak membuat input uploader/database aman secara otomatis. Aturan RTDB menentukan siapa yang dapat membaca dan menulis; hindari aturan publik untuk produksi.
 - Source program dibatasi 16 KiB, alokasi interpreter 48 KiB, dan callback/initialization Lua masing-masing dibatasi sekitar 30.000 instruksi.
-- Operasi hardware terbatas ke layar, status input, permintaan teks lewat keyboard virtual (`keyboard.request`), buzzer, LED RGB, serta pembacaan sensor gerak, baterai, suhu chip, waktu, dan tingkat suara mikrofon (pembacaan semuanya hanya-baca; tidak ada rekaman audio). Program tidak dapat mengakses Wi-Fi, BLE langsung, filesystem, proses lain, atau GPIO arbitrer.
+- Satu-satunya jalur ke hardware adalah Device API (`vyn.request` dan pembungkusnya) serta kanvas `screen`. Operasi hardware terbatas ke layar, status input, permintaan teks lewat keyboard virtual (`keyboard.request`), buzzer, LED RGB, serta pembacaan sensor gerak, baterai, suhu chip, waktu, dan tingkat suara mikrofon (pembacaan semuanya hanya-baca; tidak ada rekaman audio). Program tidak dapat mengakses Wi-Fi, BLE langsung, filesystem, proses lain, atau GPIO arbitrer.
 - Memory exhaustion atau runtime error mengakhiri aplikasi. Gunakan state lokal kecil dan render layar di `draw()` alih-alih menjalankan loop.
