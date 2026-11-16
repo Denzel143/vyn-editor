@@ -1771,9 +1771,10 @@ function __gc() collect(); collect() end
     // ---------- OLED SSD1306 128x64: port Adafruit_SSD1306 + Adafruit_GFX (font klasik 5x7 glcdfont, sel 6x8) ----------
     const FONT = new Uint8Array("000000000000005f00000007000700147f147f14242a7f2a12231308646236495620500008070300001c2241000041221c002a1c7f1c2a08083e080800807030000808080808000060600020100804023e5149453e00427f400072494949462141494d331814127f1027454545393c4a49493141211109073649494936464949291e0000140000004034000000081422411414141414004122140802015909063e415d594e7c1211127c7f494949363e414141227f4141413e7f494949417f090909013e414151737f0808087f00417f41002040413f017f081422417f404040407f021c027f7f0408107f3e4141413e7f090909063e4151215e7f09192946264949493203017f01033f4040403f1f2040201f3f4038403f631408146303047804036159494d43007f4141410204081020004141417f04020102044040404040000307080020545478407f284444383844444428384444287f385454541800087e090218a4a49c787f0804047800447d40002040403d007f1028440000417f40007c047804787c080404783844444438fc1824241818242418fc7c08040408485454542404043f44243c4040207c1c2040201c3c4030403c44281028444c9090907c4464544c440008364100000077000000413608000201020402".match(/../g).map(h => parseInt(h, 16)));   // glcdfont.c, ASCII 32..126 (5 byte/karakter, bit0 = baris atas)
     const I = v => Math.max(-32768, Math.min(32767, Math.trunc(v)));            // cast ke int16 seperti C
-    const px = (x, y) => { if (x >= 0 && x < W && y >= 0 && y < H) fb[y * W + x] = 1; };
-    const hl = (x, y, w) => { if (y < 0 || y >= H) return; for (let i = Math.max(x, 0), e = Math.min(x + w, W); i < e; i++) fb[y * W + i] = 1; };
-    const vl = (x, y, h) => { if (x < 0 || x >= W) return; for (let j = Math.max(y, 0), e = Math.min(y + h, H); j < e; j++) fb[j * W + x] = 1; };
+    let pen = 1;   // warna gambar: 1 = putih, 0 = hitam (dipakai layar keyboard)
+    const px = (x, y) => { if (x >= 0 && x < W && y >= 0 && y < H) fb[y * W + x] = pen; };
+    const hl = (x, y, w) => { if (y < 0 || y >= H) return; for (let i = Math.max(x, 0), e = Math.min(x + w, W); i < e; i++) fb[y * W + i] = pen; };
+    const vl = (x, y, h) => { if (x < 0 || x >= W) return; for (let j = Math.max(y, 0), e = Math.min(y + h, H); j < e; j++) fb[j * W + x] = pen; };
     const line = (x0, y0, x1, y1) => {              // Adafruit_GFX::drawLine / writeLine (Bresenham)
       x0 = I(x0); y0 = I(y0); x1 = I(x1); y1 = I(y1);
       if (x0 === x1) { if (y0 > y1) [y0, y1] = [y1, y0]; return vl(x0, y0, y1 - y0 + 1); }
@@ -1890,7 +1891,82 @@ function __gc() collect(); collect() end
     const padDown = [false, false, false, false];
     let swDown = false;
     let disp = null, lastAct = 0, swTimer = 0, fN = 0, fMs = 0, fT0 = 0;
-    let kbOpen = false;   // keyboard.request sedang terbuka: draw() dan callback input dijeda (seperti firmware)
+    let kbOpen = false, kb = null;   // keyboard.request sedang terbuka: draw() dan callback input dijeda (seperti firmware)
+    // ---------- Keyboard virtual (meniru layar STATE_KEYBOARD di firmware) ----------
+    // Encoder/swipe = geser karakter atau aksi, klik SW = pilih, tahan SW = pindah baris karakter <-> baris aksi.
+    const KBMAP = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?@-*/+<>'\"()&%#:;=_";
+    const kbEnc = d => {
+      if (!kb) return;
+      if (kb.confirm) { kb.yes = !kb.yes; return; }
+      if (!kb.row) kb.ci = (kb.ci + d + KBMAP.length) % KBMAP.length; else kb.ai = (kb.ai + d + 6) % 6;
+    };
+    const kbDone = submitted => {
+      if (!kb) return;
+      const txt = submitted ? kb.text : ""; kb = null; kbOpen = false; touchAct();
+      beep(submitted ? 2800 : 1400, 50);
+      say(submitted ? `⌨ on_text("${txt}", true)` : '⌨ on_text("", false) — dibatalkan');
+      guard(() => call("on_text", txt, submitted));
+    };
+    const kbAdd = c => { if (kb.text.length < kb.max) { kb.text += c; kb.act = performance.now(); } };
+    const kbClick = () => {
+      if (!kb) return; touchAct();
+      if (kb.confirm) { if (kb.yes) kb.text = ""; kb.confirm = false; kb.yes = false; return; }
+      if (!kb.row) { kbAdd(KBMAP[kb.ci]); return; }
+      switch (kb.ai) {
+        case 0: kbAdd(" "); break;
+        case 1: beep(800, 100); say("Mikrofon (speech-to-text) tidak disimulasikan: butuh Wi-Fi di perangkat."); break;
+        case 2: if (kb.text.length) { kb.text = kb.text.slice(0, -1); kb.act = performance.now(); } break;
+        case 3: kb.confirm = true; kb.yes = false; break;
+        case 4: kbDone(true); break;
+        case 5: kbDone(false); break;
+      }
+    };
+    const kbToggleRow = () => { if (kb && !kb.confirm) { kb.row = !kb.row; if (kb.row) kb.ai = 0; } };
+    const kbDraw = () => {
+      fb.fill(0); pen = 1;
+      const rr = (x, y, w, h) => { hl(x + 2, y, w - 4); hl(x + 2, y + h - 1, w - 4); vl(x, y + 2, h - 4); vl(x + w - 1, y + 2, h - 4); px(x + 1, y + 1); px(x + w - 2, y + 1); px(x + 1, y + h - 2); px(x + w - 2, y + h - 2); };
+      const tri = (a, b, c, d, e, f) => { line(a, b, c, d); line(c, d, e, f); line(e, f, a, b); };
+      // type bar (drawTypeBar(1, 1, 126, 15, ...))
+      const bx = 1, by = 1, bw = 126, bh = 15, tx = bx + 3, ty = by + 4, cap = Math.floor((bw - 6 - 2) / 6), len = kb.text.length;
+      rectP(bx, by, bw, bh, 0); let cells = 0;
+      if (len === 0) { if (kb.prompt) text(tx + 4, ty, kb.prompt.slice(0, Math.floor((bw - 6 - 4) / 6))); }
+      else if (len <= cap) { text(tx, ty, kb.text); cells = len; }
+      else { for (let i = 0; i < 4; i++) vl(tx + i, ty + 3 - i, 2 * i + 1); text(tx + 6, ty, kb.text.slice(len - (cap - 1))); cells = cap; }
+      const now = performance.now();
+      if ((now - kb.act < 600) || (now % 1000 < 500)) rectP(tx + cells * 6, ty - 1, 2, 10, 1);
+      // carousel karakter
+      for (let i = 0; i < 11; i++) {
+        let idx = kb.ci - 5 + i; idx = ((idx % KBMAP.length) + KBMAP.length) % KBMAP.length;
+        if (i === 5 && !kb.row) { rectP(56, 24, 11, 12, 1); pen = 0; text(10 + i * 10, 26, KBMAP[idx]); pen = 1; }
+        else text(10 + i * 10, 26, KBMAP[idx]);
+      }
+      // baris aksi: spasi, mikrofon (dicoret = offline), hapus, bersihkan, kirim, tutup
+      const cx = [11, 32, 54, 76, 98, 118], y = 52;
+      for (let n = 0; n < 6; n++) {
+        const x = cx[n], sel = kb.row && kb.ai === n;
+        if (sel) rectP(x - 10, y - 9, 20, 18, 1);
+        const c = sel ? 0 : 1; pen = c;
+        if (n === 1) {
+          rr(x - 2, y - 7, 5, 10); line(x - 5, y - 2, x - 5, y + 1); line(x + 5, y - 2, x + 5, y + 1);
+          line(x - 5, y + 1, x - 3, y + 4); line(x + 5, y + 1, x + 3, y + 4); line(x - 3, y + 4, x + 3, y + 4);
+          line(x, y + 4, x, y + 7); line(x - 3, y + 7, x + 3, y + 7);
+          pen = 1 - c; line(x - 10, y - 8, x + 7, y + 8); line(x - 8, y - 8, x + 9, y + 8); pen = c; line(x - 9, y - 8, x + 8, y + 8);
+        } else if (n === 0) { line(x - 6, y + 3, x + 6, y + 3); line(x - 6, y + 1, x - 6, y + 3); line(x + 6, y + 1, x + 6, y + 3); }
+        else if (n === 2) { tri(x - 6, y, x - 2, y - 4, x - 2, y + 4); rectP(x - 2, y - 2, 7, 5, 1); }
+        else if (n === 3) { rectP(x - 4, y - 2, 8, 7, 0); line(x - 5, y - 3, x + 5, y - 3); line(x - 2, y - 5, x + 2, y - 5); }
+        else if (n === 4) { tri(x - 5, y + 4, x - 3, y - 4, x + 6, y); line(x - 3, y - 4, x, y + 1); }
+        else { line(x - 4, y - 4, x + 4, y + 4); line(x + 4, y - 4, x - 4, y + 4); }
+        pen = 1;
+      }
+      if (kb.confirm) {   // dialog "Clear Text?"
+        rectP(14, 12, 100, 40, 1); pen = 0; rectP(15, 13, 98, 38, 1); pen = 1; rectP(14, 12, 100, 40, 0);
+        text(22, 16, "Clear Text?");
+        if (kb.yes) { rectP(20, 30, 30, 14, 1); pen = 0; } else rectP(20, 30, 30, 14, 0);
+        text(26, 33, "Yes"); pen = 1;
+        if (!kb.yes) { rectP(78, 30, 24, 14, 1); pen = 0; } else rectP(78, 30, 24, 14, 0);
+        text(82, 33, "No"); pen = 1;
+      }
+    };
     const call = (name, ...a) => (!running || !disp || kbOpen) ? true : disp(name, ...a);   // __call (Lua) mencari fungsi global saat dipanggil, seperti firmware
     const touchAct = () => { lastAct = performance.now(); };
     const guard = fn => { try { fn(); } catch (e) { fail(e); } };
@@ -1903,7 +1979,7 @@ function __gc() collect(); collect() end
       if (ad <= 2) {
         const nd = d > 0 ? 1 : -1;
         G.steps = (G.dir && G.dir !== nd) ? ad : G.steps + ad; G.dir = nd; G.last = p; G.t = t;
-        if (G.steps >= 3) { if (t - G.trig > 250) { G.trig = t; guard(() => call("on_swipe", nd > 0 ? "right" : "left")); } G.steps = 0; }
+        if (G.steps >= 3) { if (t - G.trig > 250) { G.trig = t; if (kbOpen) kbEnc(nd > 0 ? 1 : -1); else guard(() => call("on_swipe", nd > 0 ? "right" : "left")); } G.steps = 0; }
       } else { G.dir = 0; G.steps = 0; G.last = p; G.t = t; }
     };
     const setPads = next => {
@@ -1912,12 +1988,18 @@ function __gc() collect(); collect() end
       for (let i = 0; i < 4; i++) if (!padDown[i] && next[i]) { padDown[i] = true; const t = vtime(); guard(() => call("on_touch", i + 1, true)); if (running) gesture(i, t); }
     };
     const haptic = () => { try { if (navigator.vibrate) navigator.vibrate(35); } catch {} };   // haptic tiap detent encoder (perangkat yang mendukung Vibration API)
-    const encoderStep = s => { touchAct(); beep(1500, 7, .03, "square"); haptic(); guard(() => call("on_encoder", s)); };
+    const encoderStep = s => { touchAct(); beep(1500, 7, .03, "square"); haptic(); if (kbOpen) kbEnc(s); else guard(() => call("on_encoder", s)); };
     const setSw = down => {
       if (swDown === down) return; swDown = down; touchAct(); $("knobCap").classList.toggle("down", down);
-      guard(() => call("on_sw", down));
       clearTimeout(swTimer);
-      if (down && running && $("simDev").checked) swTimer = setTimeout(() => { if (swDown && running) { say("SW ditahan ≥ 500 ms: keluar dari program (seperti perangkat)."); stop(); } }, 500);
+      if (kbOpen) {   // keyboard terbuka: klik = pilih, tahan = pindah baris karakter/aksi; tidak ada callback on_sw & tidak keluar program
+        if (down) { kb.long = false; swTimer = setTimeout(() => { if (swDown && kbOpen) { kb.long = true; beep(1800, 20); kbToggleRow(); } }, 500); }
+        else if (kb.swIgnore) kb.swIgnore = false;   // SW sudah ditekan sebelum keyboard terbuka: lepasnya tidak dihitung klik
+        else if (!kb.long) kbClick();
+        return;
+      }
+      guard(() => call("on_sw", down));
+      if (down && running && $("simDev").checked) swTimer = setTimeout(() => { if (swDown && running && !kbOpen) { say("SW ditahan ≥ 500 ms: keluar dari program (seperti perangkat)."); stop(); } }, 500);
     };
 
     // Pad touch: kanvas putih, 4 garis = elektroda; jari berukuran nyata (lingkaran), jejak saat digeser
@@ -2061,23 +2143,15 @@ function __gc() collect(); collect() end
         $("led").style.background = `rgb(${r},${g},${b})`; $("led").style.boxShadow = `0 0 18px rgb(${r},${g},${b})`; $("ledTxt").textContent = `LED: rgb(${r}, ${g}, ${b})`;
       },
       rgbAuto: () => ledAuto(),
-      kbreq: (p, ini, mx) => {   // keyboard.request(prompt [, initial [, max_len]]) -> true bila permintaan diterima; hasil lewat on_text(text, submitted)
+      kbreq: (p, ini, mx) => {   // keyboard.request(prompt [, initial [, max_len]]) -> true bila diterima; hasil lewat on_text(text, submitted)
         p = Sx(p, "keyboard.request", 1);
         ini = (ini === undefined || ini === null) ? "" : Sx(ini, "keyboard.request", 2);
         mx = (mx === undefined || mx === null) ? 32 : NI(mx, "keyboard.request", 3);
         if (mx < 1 || mx > 100) throw argErr("keyboard.request", 3, "max_len must be 1..100");
         if (kbOpen) return false;
         const ascii = v => v.replace(/[^\x20-\x7E]/g, "");
-        p = ascii(p).slice(0, 15); ini = ascii(ini).slice(0, mx);
-        kbOpen = true; say(`⌨ keyboard.request("${p}") — keyboard virtual terbuka (disimulasikan dengan dialog browser).`);
-        setTimeout(() => {   // dibuka setelah callback saat ini selesai, seperti luaKeyboardTick() di firmware
-          if (!running) { kbOpen = false; return; }
-          const r = window.prompt(`${p || "Keyboard"}\n(maks ${mx} karakter; Batal = tutup keyboard tanpa kirim)`, ini);
-          const submitted = r !== null, txt = submitted ? ascii(r).slice(0, mx) : "";
-          kbOpen = false; touchAct();
-          say(submitted ? `⌨ on_text("${txt}", true)` : "⌨ on_text(\"\", false) — dibatalkan");
-          guard(() => call("on_text", txt, submitted));
-        }, 0);
+        kb = { prompt: ascii(p).slice(0, 15), text: ascii(ini).slice(0, mx), max: mx, ci: 0, row: false, ai: 0, confirm: false, yes: false, act: performance.now(), swIgnore: swDown, long: false };
+        kbOpen = true; say(`⌨ keyboard.request("${kb.prompt}", max ${mx}) — keyboard virtual terbuka.`);
         return true;
       },
       keep: () => { keeps++; touchAct(); },
@@ -2130,7 +2204,7 @@ function __gc() collect(); collect() end
     };
     const cleanMsg = e => { const m = String((e && e.message) || e).replace(/^Error:\s*/, "").split("\n")[0]; return /timeout/i.test(m) ? "melewati batas waktu eksekusi (loop terlalu lama); aplikasi dihentikan" : m; };
     function stop(quiet) {
-      runId++; loader.abort(); running = false; disp = null; kbOpen = false; clearTimeout(swTimer); cancelAnimationFrame(raf);
+      runId++; loader.abort(); running = false; disp = null; kbOpen = false; kb = null; clearTimeout(swTimer); cancelAnimationFrame(raf);
       if (eng) { try { eng.global.close(); } catch (e) {} eng = null; }
       ledAuto(); if (!quiet) setState("Berhenti");
     }
@@ -2176,8 +2250,9 @@ function __gc() collect(); collect() end
       if (!running) return;
       raf = requestAnimationFrame(frame);
       if (ts - lastF < 33) return;
-      if (kbOpen) return;   // keyboard terbuka: layar program dijeda
-      lastF = ts; fb.fill(0);
+      lastF = ts;
+      if (kbOpen) { kbDraw(); blit(); return; }   // keyboard terbuka: layar program dijeda, tampilkan keyboard virtual
+      fb.fill(0);
       text(2, 2, $("name").value.trim()); hl(0, 10, W);   // appLuaDraw(): nama aplikasi + garis header, lalu draw()
       if ($("simDev").checked && ts - lastAct > 120000) { say("Tidak ada interaksi 120 dtk: program ditutup (panggil app.keep_alive() agar tetap berjalan)."); stop(); return; }
       const t1 = performance.now();
