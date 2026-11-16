@@ -1,7 +1,7 @@
-// Serverless function (Vercel, Node 18+): POST /api/agent  -> aliran SSE dari Gemini
+// Serverless function (Vercel, Node 18+): POST /api/agent  -> satu respons JSON utuh dari Gemini (tanpa streaming)
 // Kunci Gemini dibaca dari Environment Variable bernama "API" (tidak pernah dikirim ke browser).
 const MODEL = "gemini-flash-lite-latest";
-const URL_ = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse`;
+const URL_ = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 const COMMON = `You are the built-in code-generation engine of "VynWatch Creator", an admin tool that builds store packages for the VynWatch smartwatch (ESP32-S3, 128x64 monochrome OLED).
 Hard rules:
@@ -56,12 +56,18 @@ module.exports = async (req, res) => {
         generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA[mode], temperature: 0.4 }
       })
     });
-    if (!r.ok) { const d = await r.json().catch(() => ({})); return res.status(502).json({ error: d?.error?.message || `Gemini HTTP ${r.status}` }); }
-    res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" });
-    for await (const chunk of r.body) res.write(chunk); // teruskan aliran apa adanya ke browser
-    res.end();
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(502).json({ error: d?.error?.message || `Gemini HTTP ${r.status}` });
+    if (d?.promptFeedback?.blockReason) return res.status(502).json({ error: "Permintaan diblokir AI: " + d.promptFeedback.blockReason });
+    const cand = d?.candidates?.[0];
+    const text = (cand?.content?.parts || []).map(p => p.text || "").join("");
+    if (cand?.finishReason === "MAX_TOKENS") return res.status(502).json({ error: "Respons AI terpotong (melewati batas panjang). Coba permintaan yang lebih ringkas." });
+    if (!text) return res.status(502).json({ error: "Respons AI kosong" + (cand?.finishReason ? ` (${cand.finishReason})` : "") + ". Coba kirim ulang." });
+    return res.status(200).json({ text }); // satu JSON utuh: semua field langsung lengkap
   } catch (e) {
-    if (res.headersSent) return res.end();
     return res.status(502).json({ error: "Gagal memanggil AI: " + e.message });
   }
 };
+
+// Tanpa streaming, respons baru dikirim setelah AI selesai: beri batas waktu fungsi yang cukup (diabaikan bila paket Vercel membatasi lebih rendah).
+module.exports.config = { maxDuration: 60 };
