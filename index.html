@@ -624,6 +624,26 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
   #dbFab b{font-weight:700;background:rgba(0,0,0,.18);border-radius:999px;padding:1px 8px;font-size:12px}#dbFab b:empty{display:none}
   #simHint{display:none}
 }
+
+/* ===== Simulator: tema neon mengikuti warna LED (aktif hanya saat LED menyala) ===== */
+#simOverlay.led-on,#simOverlay.led-on *{--glow:var(--led);--accent:var(--led);--conic:conic-gradient(from var(--ang),var(--led),var(--led-2),var(--led-3),var(--led-2),var(--led))}
+#simOverlay{transition:background .26s ease,backdrop-filter .26s ease}
+#simOverlay.in.led-on{background:radial-gradient(60% 60% at 30% 20%,var(--led-a),transparent),radial-gradient(50% 50% at 80% 90%,var(--led-b),transparent),rgba(8,8,10,.8)}
+#simOverlay .sim-card{transition:opacity .26s ease,transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .25s ease}
+#simOverlay.led-on .sim-card{box-shadow:0 24px 80px #000a,0 0 70px -10px var(--led-a),0 0 150px -30px var(--led-b)}
+#oled{transition:box-shadow .15s ease,border-color .15s ease}
+#simOverlay.led-on #oled{border-color:var(--led-d);box-shadow:0 0 0 1px var(--led),0 0 14px 1px var(--led-a),0 0 44px 4px var(--led-b)}
+#simOverlay.led-on #led{border-color:var(--led);box-shadow:0 0 12px 2px var(--led),0 0 34px 8px var(--led-a)!important}
+#simOverlay.led-on #ledTxt{color:var(--led);text-shadow:0 0 10px var(--led-a)}
+#simOverlay.led-on #simLoadFill{background:repeating-linear-gradient(135deg,var(--led) 0 10px,var(--led-2) 10px 20px);background-size:28px 28px}
+#simOverlay.led-on #simLoadPct{text-shadow:0 0 10px var(--led-a)}
+#simOverlay.led-on #knobCap circle{stroke:var(--led);filter:drop-shadow(0 0 5px var(--led-a))}
+#simOverlay.led-on #knobRot circle:last-child{fill:var(--led);filter:drop-shadow(0 0 4px var(--led))}
+#simOverlay.led-on #padStrip{box-shadow:0 0 0 1px var(--led-d),0 0 22px -2px var(--led-a)}
+#simOverlay.led-on .sim-head h2{text-shadow:0 0 16px var(--led-a)}
+#simOverlay.led-on input[type=range]{accent-color:var(--led)}
+#simOverlay.led-on #simRun:not(:disabled){background-image:linear-gradient(110deg,var(--led),var(--led-2),var(--led));box-shadow:0 0 18px -4px var(--led-a)}
+@media (prefers-reduced-motion:reduce){#simOverlay.led-on #oled{transition:none}}
 </style>
 </head>
 <body>
@@ -2270,27 +2290,28 @@ function __gc() collect(); collect() end
     const vtime = () => { const t = Math.max(performance.now(), lastEvt + MINGAP + 1); lastEvt = t; return t; };   // hormati jeda minimum antar pad (10 ms)
     const sizeStrip = () => { const r = strip.getBoundingClientRect(); dpr = window.devicePixelRatio || 1; sw_ = r.width; sh_ = r.height; FR = Math.max(16, Math.min(28, sw_ * .075)); strip.width = Math.round(sw_ * dpr); strip.height = Math.round(sh_ * dpr); };
     const pos = e => { const r = strip.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    let padTint = null;   // diisi ledTheme(); null = warna default (teal)
     function drawPad(now) {
-      const c = sctx; c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, sw_, sh_);
+      const c = sctx, T = padTint, tOn = T ? T.on : "#0e8f82", tRgb = T ? T.rgb : "14,165,150", tDark = T ? T.rgb : "10,110,100"; c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, sw_, sh_);
       c.fillStyle = "#fff"; c.beginPath(); c.roundRect(0, 0, sw_, sh_, 10); c.fill();
       c.lineCap = "round"; c.textAlign = "center"; c.font = "600 11px ui-monospace, monospace";
       for (let i = 0; i < 4; i++) {
         const x = lineX(i), on = padDown[i];
-        c.strokeStyle = on ? "#0e8f82" : "#9aa7ad"; c.lineWidth = on ? 5 : 3;
+        c.strokeStyle = on ? tOn : "#9aa7ad"; c.lineWidth = on ? 5 : 3;
         c.beginPath(); c.moveTo(x, 24); c.lineTo(x, sh_ - 12); c.stroke();
-        c.fillStyle = on ? "#0e8f82" : "#6b7a82"; c.fillText(String(i + 1), x, 15);
+        c.fillStyle = on ? tOn : "#6b7a82"; c.fillText(String(i + 1), x, 15);
       }
       trail = trail.filter(p => now - p.t < TRAIL_MS);
       for (let k = 1; k < trail.length; k++) {
         const a = 1 - (now - trail[k].t) / TRAIL_MS;
-        c.strokeStyle = `rgba(14,165,150,${(a * .8).toFixed(3)})`; c.lineWidth = Math.max(1, FR * 1.5 * a);
+        c.strokeStyle = `rgba(${tRgb},${(a * .8).toFixed(3)})`; c.lineWidth = Math.max(1, FR * 1.5 * a);
         c.beginPath(); c.moveTo(trail[k - 1].x, trail[k - 1].y); c.lineTo(trail[k].x, trail[k].y); c.stroke();
       }
       const f = act !== null ? cur : hover;
       if (f) {
         c.beginPath(); c.arc(f.x, f.y, FR, 0, Math.PI * 2);
-        c.fillStyle = act !== null ? "rgba(14,165,150,.30)" : "rgba(14,165,150,.10)"; c.fill();
-        c.strokeStyle = "rgba(10,110,100,.9)"; c.lineWidth = 2; c.stroke();
+        c.fillStyle = act !== null ? `rgba(${tRgb},.30)` : `rgba(${tRgb},.10)`; c.fill();
+        c.strokeStyle = `rgba(${tDark},.9)`; c.lineWidth = 2; c.stroke();
       }
     }
     const padLoop = () => { drawPad(performance.now()); padRaf = requestAnimationFrame(padLoop); };
@@ -2401,6 +2422,7 @@ function __gc() collect(); collect() end
         for (const [v, n, ix] of [[r, "red", 1], [g, "green", 2], [b, "blue", 3]]) { const x = NI(v, "rgb.set", ix); if (x < 0 || x > 255) throw argErr("rgb.set", ix, `${n} must be 0..255`); }
         [r, g, b] = [r, g, b].map(Number);
         $("led").style.background = `rgb(${r},${g},${b})`; $("led").style.boxShadow = `0 0 18px rgb(${r},${g},${b})`; $("ledTxt").textContent = `LED: rgb(${r}, ${g}, ${b})`;
+        ledTheme(r, g, b);
       },
       rgbAuto: () => ledAuto(),
       kbreq: (p, ini, mx) => {   // keyboard.request(prompt [, initial [, max_len]]) -> true bila diterima; hasil lewat on_text(text, submitted)
@@ -2418,7 +2440,28 @@ function __gc() collect(); collect() end
       keep: () => { keeps++; touchAct(); },
       log: m => say("print: " + m)
     });
-    const ledAuto = () => { $("led").style.background = "#222"; $("led").style.boxShadow = "none"; $("ledTxt").textContent = "LED: otomatis"; };
+    const ledAuto = () => { $("led").style.background = "#222"; $("led").style.boxShadow = "none"; $("ledTxt").textContent = "LED: otomatis"; ledTheme(); };
+    // Tema neon simulator mengikuti warna LED. Tanpa argumen (rgb.auto / program berhenti) atau rgb(0,0,0) = LED mati -> kembali ke tema default sistem.
+    let ledKey = "";
+    function ledTheme(r, g, b) {
+      const root = $("simOverlay"), st = root.style, vars = ["--led", "--led-2", "--led-3", "--led-d", "--led-a", "--led-b"];
+      const mx = Math.max(r | 0, g | 0, b | 0);
+      if (!(mx > 0)) { if (ledKey === "") return; ledKey = ""; root.classList.remove("led-on"); vars.forEach(v => st.removeProperty(v)); padTint = null; return; }
+      const k = mx + "|" + r + "|" + g + "|" + b; if (k === ledKey) return; ledKey = k;
+      // warna neon: pertahankan rona LED, naikkan kecerlangan agar tetap terbaca; intensitas pendar mengikuti terang LED
+      const n = 255 / mx, R = Math.round(r * n), G = Math.round(g * n), B = Math.round(b * n), I = Math.max(.25, mx / 255);
+      const mn = Math.min(R, G, B), d = mx === 0 ? 0 : (255 - mn);
+      let h = 0; if (d > 0) { h = R === 255 ? ((G - B) / d) % 6 : G === 255 ? (B - R) / d + 2 : (R - G) / d + 4; h = (h * 60 + 360) % 360; }
+      const sat = d ? Math.round(d / 255 * 100) : 0;
+      st.setProperty("--led", `rgb(${R},${G},${B})`);
+      st.setProperty("--led-2", `hsl(${Math.round(h + 28) % 360} ${Math.max(sat, 0)}% 72%)`);
+      st.setProperty("--led-3", `hsl(${Math.round(h + 332) % 360} ${Math.max(sat, 0)}% 55%)`);
+      st.setProperty("--led-d", `rgba(${R},${G},${B},.55)`);
+      st.setProperty("--led-a", `rgba(${R},${G},${B},${(.55 * I).toFixed(2)})`);
+      st.setProperty("--led-b", `rgba(${R},${G},${B},${(.30 * I).toFixed(2)})`);
+      padTint = { on: `rgb(${Math.round(R * .62)},${Math.round(G * .62)},${Math.round(B * .62)})`, rgb: `${Math.round(R * .55)},${Math.round(G * .55)},${Math.round(B * .55)}`, txt: `rgb(${Math.round(R * .45 + 40)},${Math.round(G * .45 + 40)},${Math.round(B * .45 + 40)})` };
+      root.classList.add("led-on");
+    }
 
     // ---------- Siklus hidup ----------
     // ---------- Loading bar (di atas layar OLED) ----------
