@@ -2339,13 +2339,18 @@ function __gc() collect(); collect() end
         text(82, 33, "No"); pen = 1;
       }
     };
-    // Tiap panggilan JS -> Lua di wasmoon membuat thread Lua baru; encoder yang diputar cepat menumpuk sampah thread sampai batas memori 48 KB
-    // terasa penuh. Koleksi penuh berkala (murah di heap sekecil ini) menjaganya tetap lapang, seperti GC inkremental di firmware.
-    let callN = 0, gcFn = null;
+    // Tiap panggilan JS -> Lua (draw, on_*) meninggalkan ±1-2 KB sampah (thread wasmoon + tabel broker) yang tidak ada di firmware.
+    // GC otomatis Lua baru mulai saat memori ±2x memori hidup, dan GC darurat saat batas tercapai tidak membersihkannya,
+    // jadi hanya GC tiap 40 panggilan membuat aplikasi yang sering memanggil imu./input./device. kehabisan memori di simulator.
+    // Solusi: GC penuh juga dijalankan begitu sampah sejak GC terakhir melebihi GC_SLACK (murah: ±0,1 ms pada heap sekecil ini).
+    let callN = 0, gcFn = null, gcMark = Infinity;
+    const GC_SLACK = 16 * 1024;
     const call = (name, ...a) => {   // __call (Lua) mencari fungsi global saat dipanggil, seperti firmware
       if (!running || !disp || kbOpen) return true;
       const r = disp(name, ...a);
-      if (++callN >= 40 && gcFn) { callN = 0; try { gcFn(); } catch (e) {} }
+      if (gcFn && (++callN >= 40 || (eng && eng.global.getMemoryUsed() > gcMark))) {
+        callN = 0; try { gcFn(); gcMark = eng.global.getMemoryUsed() + GC_SLACK; } catch (e) {}
+      }
       return r;
     };
     const touchAct = () => { lastAct = performance.now(); };
@@ -2638,7 +2643,7 @@ function __gc() collect(); collect() end
         for (const [k, v] of Object.entries(host())) eng.global.set("__h_" + k, v);
         await eng.doString(LUA_BOOT);
         await eng.doString(LUA_PRELUDE);
-        const gc = eng.global.get("__gc"); gc(); eng.global.set("__gc", undefined); gcFn = gc; callN = 0;
+        const gc = eng.global.get("__gc"); gc(); eng.global.set("__gc", undefined); gcFn = gc; callN = 0; gcMark = Infinity;
         // Batas memori simulator = kelonggaran aplikasi di firmware, DIKALIKAN faktor kompensasi.
         // Firmware (LUA_32BITS): nilai Lua 8 B; sisa kelonggaran aplikasi = 48 KiB - (5 pustaka + tabel API) ≈ 48 KiB - 10,9 KB ≈ 37,3 KiB.
         // Simulator (wasmoon, Lua 64-bit): nilai Lua 16 B (array 2x, node hash 1,5x, konstanta/stack/upvalue ikut membesar).
@@ -2647,6 +2652,7 @@ function __gc() collect(); collect() end
         // firmware kurang dari ±25-75% bisa lolos di simulator tetapi tetap gagal di perangkat.
         const FW_HEADROOM = 48 * 1024 - 10900, SIM_FACTOR = 1.75;
         eng.global.setMemoryMax(eng.global.getMemoryUsed() + Math.round(FW_HEADROOM * SIM_FACTOR));
+        gcMark = eng.global.getMemoryUsed() + GC_SLACK;
         if (my !== runId) return;
         const runner = eng.global.get("__run"), dsp = eng.global.get("__call");
         eng.global.set("__run", undefined); eng.global.set("__call", undefined);   // disembunyikan dari program
