@@ -272,6 +272,8 @@ keyboard.request(prompt [, initial [, max_len]])
 
 Selama keyboard terbuka, `draw()` dan callback input (`on_touch`, `on_sw`, `on_swipe`, `on_encoder`) dijeda, lalu berlanjut setelah `on_text` dipanggil. Program tetap berjalan dan state-nya tidak hilang. Keyboard hanya mendukung ASCII; karakter lain diabaikan. Tombol mikrofon di keyboard (speech-to-text) hanya aktif bila Wi-Fi terhubung, dan hasilnya tetap masuk ke kolom teks. Jika program dihentikan, dihapus, atau layar berpindah ke laman lain selagi keyboard terbuka, permintaan dibatalkan dan `on_text` tidak dipanggil. Di dalam `on_text` program boleh langsung memanggil `keyboard.request` lagi.
 
+**Memanggil dari tombol SW.** Bila `keyboard.request` dipanggil saat SW sedang ditekan (misalnya di `on_sw(true)`), firmware menunggu SW dilepas dulu. Klik singkat membuka keyboard, sedangkan menahan SW lama tetap keluar dari aplikasi seperti biasa dan keyboard tidak terbuka. Jadi `on_sw(pressed)` aman dipakai sebagai pemicu keyboard tanpa menghilangkan cara keluar. Bila dipanggil dari `on_sw(false)`, `draw()`, atau callback lain, keyboard terbuka segera.
+
 Karena permintaan dibuka setelah callback selesai, jangan mengandalkan `keyboard.request` di tingkat teratas chunk saat aplikasi pertama kali dimuat; panggil dari `draw()` atau callback input, atau gunakan flag seperti pada contoh.
 
 ```lua
