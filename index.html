@@ -2024,6 +2024,7 @@ storage = {
   remove = function(k) return H.sdel(numstr(k)) end }
 -- ===== LAPISAN 2: broker Device API (skema IDENTIK dengan src/vyn_api.cpp) =====
 -- ===== LAPISAN 1: HAL simulator = fungsi host H.* (nilai dari slider/kontrol simulator); hanya broker yang memanggilnya =====
+local ipairs, pairs, error, tsort, huge = ipairs, pairs, error, table.sort, math.huge   -- salinan lokal: program tidak bisa merusak broker dengan menimpa global
 local VER, RES, floor = 1, {}, math.floor
 -- field: {nama, tipe, min, max}; param: {nama, tipe, min, max, wajib}
 local function def(name, params, fields, h) RES[name] = { p = params, f = fields, h = h } end
@@ -2082,6 +2083,7 @@ local function request(name, params)
   for _, f in ipairs(spec.f) do   -- normalisasi seperti broker firmware: urutan skema, tipe dipaksa, nilai dijepit ke rentang
     local v = vals[f[1]]
     if f[2] ~= "bool" then
+      if type(v) ~= "number" or v ~= v or v == huge or v == -huge then env.error = "error"; env.detail = "field '" .. f[1] .. "' is not finite"; return env end
       if f[3] then v = v < f[3] and f[3] or (v > f[4] and f[4] or v) end
       if f[2] == "int" then v = floor(v + 0.5) else v = v + 0.0 end
     end
@@ -2092,7 +2094,7 @@ local function request(name, params)
 end
 vyn = { version = VER, request = request,
   has = function(n) return type(n) == "string" and RES[n] ~= nil end,
-  list = function() local t = {}; for k in pairs(RES) do t[#t + 1] = k end; table.sort(t); return t end }
+  list = function() local t = {}; for k in pairs(RES) do t[#t + 1] = k end; tsort(t); return t end }
 
 -- Pembungkus kompatibilitas (hanya lewat request): data atau nil bila belum siap; parameter salah = error Lua
 local function rd(name, params) local e = request(name, params); if e.error == "bad_param" then error(e.detail, 3) end; return e.data end
@@ -2216,10 +2218,11 @@ function __gc() collect(); collect() end
     });
     const val = k => {
       let v = S[k];
-      if ($("simAuto").checked) {
+      if ($("simAuto").checked && wob[k]) {   // wob 0 = tanpa goyangan (sebelumnya "bat" -> charCodeAt(3) undefined -> NaN)
         const t = performance.now() / 1000;
         v += wob[k] * (k === "mic" ? Math.random() : Math.sin(t * 1.7 + k.length * 2.1) * Math.cos(t * .6 + k.charCodeAt(3)));
       }
+      if (!Number.isFinite(v)) v = Number.isFinite(S[k]) ? S[k] : rng[k][0];   // jangan pernah mengirim NaN/Infinity ke Lua
       return Math.min(rng[k][1], Math.max(rng[k][0], v));
     };
     // Bingkai layar firmware: X = kanan, Y = atas, Z = keluar layar. pitch X: +90 layar menghadap atas; roll Z: 0 tegak, + bila sisi kanan terangkat.
@@ -2336,7 +2339,15 @@ function __gc() collect(); collect() end
         text(82, 33, "No"); pen = 1;
       }
     };
-    const call = (name, ...a) => (!running || !disp || kbOpen) ? true : disp(name, ...a);   // __call (Lua) mencari fungsi global saat dipanggil, seperti firmware
+    // Tiap panggilan JS -> Lua di wasmoon membuat thread Lua baru; encoder yang diputar cepat menumpuk sampah thread sampai batas memori 48 KB
+    // terasa penuh. Koleksi penuh berkala (murah di heap sekecil ini) menjaganya tetap lapang, seperti GC inkremental di firmware.
+    let callN = 0, gcFn = null;
+    const call = (name, ...a) => {   // __call (Lua) mencari fungsi global saat dipanggil, seperti firmware
+      if (!running || !disp || kbOpen) return true;
+      const r = disp(name, ...a);
+      if (++callN >= 40 && gcFn) { callN = 0; try { gcFn(); } catch (e) {} }
+      return r;
+    };
     const touchAct = () => { lastAct = performance.now(); };
     const guard = fn => { try { fn(); } catch (e) { fail(e); } };
     const G = { last: -1, t: 0, dir: 0, steps: 0, trig: 0 };   // sama seperti readTouchGestures(): usapan harus menyapu 3 pad bersebelahan
@@ -2452,6 +2463,8 @@ function __gc() collect(); collect() end
       }
       knobView(wAcc / WHEEL_PX * DET * .4); clearTimeout(wView); wView = setTimeout(() => knobView(0), 200);   // knob bergeser sedikit mengikuti jari
     }, { passive: false });
+    // SW/knob bisa "macet" bila overlay ditutup atau program berhenti saat tombol masih ditahan (pointerup tidak pernah tiba)
+    const resetInput = () => { swDown = false; clearTimeout(swTimer); cap.classList.remove("down"); acc = 0; lastA = null; rot.classList.remove("drag"); wAcc = 0; knobView(0); };
     cap.addEventListener("pointerdown", e => { e.stopPropagation(); cap.setPointerCapture(e.pointerId); setSw(true); });
     ["pointerup", "pointercancel"].forEach(t => cap.addEventListener(t, () => setSw(false)));
 
@@ -2596,9 +2609,13 @@ function __gc() collect(); collect() end
       FACT = new window.wasmoon.LuaFactory(WBASE + "glue.wasm");
       return FACT;
     };
-    const cleanMsg = e => { const m = String((e && e.message) || e).replace(/^Error:\s*/, "").split("\n")[0]; return /timeout/i.test(m) ? "melewati batas waktu eksekusi (loop terlalu lama); aplikasi dihentikan" : m; };
+    const cleanMsg = e => { const m = String((e && e.message) || e).replace(/^Error:\s*/, "").split("\n")[0]; 
+      if (/timeout/i.test(m)) return "melewati batas waktu eksekusi (loop terlalu lama); aplikasi dihentikan";
+      if (/not enough memory|memory limit|out of memory/i.test(m)) return "melebihi batas memori interpreter (48 KiB); aplikasi dihentikan";
+      if (/unreachable|memory access out of bounds|^abort|RuntimeError/i.test(m)) return "mesin Lua simulator berhenti tak terduga (" + m + "); biasanya akibat memori habis atau rekursi terlalu dalam";
+      return m; };
     function stop(quiet) {
-      runId++; loader.abort(); running = false; disp = null; kbOpen = false; kb = null; kbPend = null; clearTimeout(swTimer); cancelAnimationFrame(raf);
+      runId++; loader.abort(); running = false; disp = null; gcFn = null; kbOpen = false; kb = null; kbPend = null; clearTimeout(swTimer); cancelAnimationFrame(raf);
       if (eng) { try { eng.global.close(); } catch (e) {} eng = null; }
       ledAuto(); if (!quiet) setState("Berhenti");
     }
@@ -2610,7 +2627,7 @@ function __gc() collect(); collect() end
       const code = editor.getValue(), c = checkLua(code);
       if (!c.ok) { say("✗ Verifikasi gagal, tidak dijalankan: " + c.msg, true); return; }
       try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); } catch (e) {}
-      stop(true); const my = runId; logEl.textContent = ""; setState(""); loader.start();
+      stop(true); resetInput(); const my = runId; logEl.textContent = ""; setState(""); loader.start();
       try {
         const f = await loadLua(p => { if (my === runId) loader.set(p); });
         if (my !== runId) return;
@@ -2622,7 +2639,7 @@ function __gc() collect(); collect() end
         await eng.doString(LUA_BOOT);
         const memU1 = eng.global.getMemoryUsed();   // baseline setara firmware (5 pustaka + fungsi host)
         await eng.doString(LUA_PRELUDE);
-        const gc = eng.global.get("__gc"); gc(); eng.global.set("__gc", undefined);
+        const gc = eng.global.get("__gc"); gc(); eng.global.set("__gc", undefined); gcFn = gc; callN = 0;
         // Batas 48 KB seperti limitedAllocator di firmware, di luar overhead prelude. +2,5 KB: closure fungsi host JS (≈4,2 KB) vs tabel API
         // firmware (≈2,5 KB) dan thread per panggilan wasmoon. Hasilnya perkiraan (±1–2 KB), sengaja condong longgar agar tidak ada error palsu.
         eng.global.setMemoryMax(48 * 1024 + 2560 + (eng.global.getMemoryUsed() - memU1));
@@ -2666,7 +2683,7 @@ function __gc() collect(); collect() end
       sizeStrip(); cancelAnimationFrame(padRaf); padRaf = requestAnimationFrame(padLoop); $("simClose").focus({ preventScroll: true });
     }
     function closeSim() {
-      if (!isOpen || closing) return; closing = true; stop(); act = null; setPads([false, false, false, false]); trail = []; ov.classList.remove("in");
+      if (!isOpen || closing) return; closing = true; stop(); resetInput(); act = null; setPads([false, false, false, false]); trail = []; ov.classList.remove("in");
       ct = setTimeout(() => {
         ov.classList.remove("show"); ov.setAttribute("aria-hidden", "true"); bg().forEach(el => el.removeAttribute("inert"));
         document.documentElement.style.overflow = ""; cancelAnimationFrame(padRaf); isOpen = closing = false; openBtn.focus({ preventScroll: true });
