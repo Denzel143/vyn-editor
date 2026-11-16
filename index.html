@@ -871,6 +871,7 @@
       device: { battery: "", temperature: "", time: "" },
       rgb:    { set: "nnn", auto: "" },
       mic:    { level: "" },
+      keyboard: { request: "s" },
       app:    { id: null, name: null, keep_alive: "" }
     };
     const LIBS = {
@@ -880,8 +881,8 @@
       utf8:   set("char charpattern codepoint len offset codes")
     };
     const FORBIDDEN = set("load loadstring loadfile dofile require io os package coroutine debug collectgarbage print warn rawset setmetatable getmetatable");
-    const KNOWN = set("assert error ipairs next pairs pcall rawequal rawget rawlen select tonumber tostring type xpcall _G _VERSION string table math utf8 screen input storage sound imu device rgb mic app");
-    const CALLBACKS = { draw: [], on_touch: ["pad", "touched"], on_sw: ["pressed"], on_swipe: ["direction"], on_encoder: ["step"] };
+    const KNOWN = set("assert error ipairs next pairs pcall rawequal rawget rawlen select tonumber tostring type xpcall _G _VERSION string table math utf8 screen input storage sound imu device rgb mic keyboard app");
+    const CALLBACKS = { draw: [], on_touch: ["pad", "touched"], on_sw: ["pressed"], on_swipe: ["direction"], on_encoder: ["step"], on_text: ["text", "submitted"] };
     const HINTS = { unpack: "gunakan table.unpack", loadstring: "", setfenv: "tidak ada di Lua 5.4", getfenv: "tidak ada di Lua 5.4", bit: "gunakan operator & | ~ << >>", bit32: "gunakan operator & | ~ << >>" };
 
     // ---------- Tokenizer ----------
@@ -1059,6 +1060,27 @@
       }
 
       function checkApiCall(name, spec, args, t) {
+        if (name === "keyboard.request") {   // keyboard.request(prompt [, initial [, max_len]]): argumen ke-2 dan ke-3 opsional
+          if (!args.length) { add("error", t.line, t.col, "keyboard.request membutuhkan minimal 1 argumen (prompt)"); return; }
+          if (args.length > 3) add("warning", t.line, t.col, "keyboard.request hanya memakai 3 argumen (prompt, initial, max_len); sisanya diabaikan");
+          const nilLit = a => a.kind === "lit" && a.value === "nil";
+          [0, 1].forEach(i => {
+            const a = args[i]; if (!a || (i === 1 && nilLit(a))) return;
+            if (a.kind === "num" || a.kind === "table" || a.kind === "func" || a.kind === "lit")
+              add("error", a.line || t.line, a.col || t.col, `argumen ke-${i + 1} keyboard.request harus string`);
+            else if (a.kind === "str" && i === 0 && a.value.length > 15)
+              add("warning", a.line || t.line, a.col || t.col, "keyboard.request: prompt dipotong firmware menjadi 15 karakter");
+            else if (a.kind === "str" && /[^\x20-\x7E]/.test(a.value))
+              add("warning", a.line || t.line, a.col || t.col, "keyboard.request: karakter non-ASCII diabaikan firmware (keyboard virtual hanya ASCII)");
+          });
+          const m = args[2];
+          if (m && !nilLit(m)) {
+            if (m.kind === "table" || m.kind === "func" || m.kind === "lit") add("error", m.line || t.line, m.col || t.col, "argumen ke-3 keyboard.request (max_len) harus angka");
+            else if (m.kind === "str" && !(m.value.trim() !== "" && isFinite(Number(m.value)))) add("error", m.line || t.line, m.col || t.col, `argumen ke-3 keyboard.request (max_len) harus angka, bukan string "${m.value.slice(0, 20)}"`);
+            else if (m.kind === "num" && !(Number.isInteger(m.value) && m.value >= 1 && m.value <= 100)) add("error", m.line || t.line, m.col || t.col, "keyboard.request: max_len harus bilangan bulat 1–100 (di luar itu menghentikan aplikasi)");
+          }
+          return;
+        }
         const last = args[args.length - 1];
         const multi = last && (last.kind === "call" || last.kind === "vararg");
         if (!multi && args.length < spec.length) add("error", t.line, t.col, `${name} membutuhkan ${spec.length} argumen, hanya ${args.length} diberikan`);
@@ -1474,7 +1496,7 @@
           if (!d.vararg && d.params > exp.length)
             add("warning", d.line, d.col, `${name}(${exp.join(", ")}) hanya menerima ${exp.length} argumen; parameter lain selalu nil`);
         } else if (/^on_/.test(name)) {
-          add("warning", d.line, d.col, `'${name}' bukan callback yang dikenal firmware (on_touch, on_sw, on_swipe, on_encoder) dan tidak akan dipanggil`);
+          add("warning", d.line, d.col, `'${name}' bukan callback yang dikenal firmware (on_touch, on_sw, on_swipe, on_encoder, on_text) dan tidak akan dipanggil`);
         }
       }
       const seen = new Set();
@@ -1717,6 +1739,7 @@ device = { battery = H.battery, temperature = function() return tonumber(H.temp(
     return { weekday = w, day = H.time(2), month = H.time(3), year = H.time(4), hour = H.time(5), minute = H.time(6), second = H.time(7) } end }
 rgb = { set = H.rgb, auto = H.rgbAuto }
 mic = { level = H.mic }
+keyboard = { request = H.kbreq }
 app = { id = H.appid, name = H.appname, keep_alive = H.keep }
 -- dibuang firmware (removeGlobal): dofile loadfile load collectgarbage print warn rawset setmetatable getmetatable
 for _, n in ipairs({"load","loadstring","loadfile","dofile","require","io","os","package","coroutine","debug","collectgarbage","print","warn","rawset","setmetatable","getmetatable"}) do _G[n] = nil end
@@ -1867,7 +1890,8 @@ function __gc() collect(); collect() end
     const padDown = [false, false, false, false];
     let swDown = false;
     let disp = null, lastAct = 0, swTimer = 0, fN = 0, fMs = 0, fT0 = 0;
-    const call = (name, ...a) => (!running || !disp) ? true : disp(name, ...a);   // __call (Lua) mencari fungsi global saat dipanggil, seperti firmware
+    let kbOpen = false;   // keyboard.request sedang terbuka: draw() dan callback input dijeda (seperti firmware)
+    const call = (name, ...a) => (!running || !disp || kbOpen) ? true : disp(name, ...a);   // __call (Lua) mencari fungsi global saat dipanggil, seperti firmware
     const touchAct = () => { lastAct = performance.now(); };
     const guard = fn => { try { fn(); } catch (e) { fail(e); } };
     const G = { last: -1, t: 0, dir: 0, steps: 0, trig: 0 };   // sama seperti readTouchGestures(): usapan harus menyapu 3 pad bersebelahan
@@ -2037,6 +2061,25 @@ function __gc() collect(); collect() end
         $("led").style.background = `rgb(${r},${g},${b})`; $("led").style.boxShadow = `0 0 18px rgb(${r},${g},${b})`; $("ledTxt").textContent = `LED: rgb(${r}, ${g}, ${b})`;
       },
       rgbAuto: () => ledAuto(),
+      kbreq: (p, ini, mx) => {   // keyboard.request(prompt [, initial [, max_len]]) -> true bila permintaan diterima; hasil lewat on_text(text, submitted)
+        p = Sx(p, "keyboard.request", 1);
+        ini = (ini === undefined || ini === null) ? "" : Sx(ini, "keyboard.request", 2);
+        mx = (mx === undefined || mx === null) ? 32 : NI(mx, "keyboard.request", 3);
+        if (mx < 1 || mx > 100) throw argErr("keyboard.request", 3, "max_len must be 1..100");
+        if (kbOpen) return false;
+        const ascii = v => v.replace(/[^\x20-\x7E]/g, "");
+        p = ascii(p).slice(0, 15); ini = ascii(ini).slice(0, mx);
+        kbOpen = true; say(`⌨ keyboard.request("${p}") — keyboard virtual terbuka (disimulasikan dengan dialog browser).`);
+        setTimeout(() => {   // dibuka setelah callback saat ini selesai, seperti luaKeyboardTick() di firmware
+          if (!running) { kbOpen = false; return; }
+          const r = window.prompt(`${p || "Keyboard"}\n(maks ${mx} karakter; Batal = tutup keyboard tanpa kirim)`, ini);
+          const submitted = r !== null, txt = submitted ? ascii(r).slice(0, mx) : "";
+          kbOpen = false; touchAct();
+          say(submitted ? `⌨ on_text("${txt}", true)` : "⌨ on_text(\"\", false) — dibatalkan");
+          guard(() => call("on_text", txt, submitted));
+        }, 0);
+        return true;
+      },
       keep: () => { keeps++; touchAct(); },
       log: m => say("print: " + m)
     });
@@ -2087,7 +2130,7 @@ function __gc() collect(); collect() end
     };
     const cleanMsg = e => { const m = String((e && e.message) || e).replace(/^Error:\s*/, "").split("\n")[0]; return /timeout/i.test(m) ? "melewati batas waktu eksekusi (loop terlalu lama); aplikasi dihentikan" : m; };
     function stop(quiet) {
-      runId++; loader.abort(); running = false; disp = null; clearTimeout(swTimer); cancelAnimationFrame(raf);
+      runId++; loader.abort(); running = false; disp = null; kbOpen = false; clearTimeout(swTimer); cancelAnimationFrame(raf);
       if (eng) { try { eng.global.close(); } catch (e) {} eng = null; }
       ledAuto(); if (!quiet) setState("Berhenti");
     }
@@ -2122,7 +2165,7 @@ function __gc() collect(); collect() end
         disp = dsp; running = true; t0 = lastAct = fT0 = performance.now(); keeps = 0; fN = 0; fMs = 0; G.last = -1;
         runner(code);
         if (typeof eng.global.get("draw") !== "function") throw new Error("draw() tidak ditemukan");
-        const cbs = ["on_touch", "on_sw", "on_swipe", "on_encoder"].filter(n => typeof eng.global.get(n) === "function");
+        const cbs = ["on_touch", "on_sw", "on_swipe", "on_encoder", "on_text"].filter(n => typeof eng.global.get(n) === "function");
         loader.set(98); await loader.done();
         if (my !== runId) return;
         say(`▶ ${$("name").value.trim() || "Program"} berjalan. Callback: draw${cbs.length ? ", " + cbs.join(", ") : ""}.`);
@@ -2133,6 +2176,7 @@ function __gc() collect(); collect() end
       if (!running) return;
       raf = requestAnimationFrame(frame);
       if (ts - lastF < 33) return;
+      if (kbOpen) return;   // keyboard terbuka: layar program dijeda
       lastF = ts; fb.fill(0);
       text(2, 2, $("name").value.trim()); hl(0, 10, W);   // appLuaDraw(): nama aplikasi + garis header, lalu draw()
       if ($("simDev").checked && ts - lastAct > 120000) { say("Tidak ada interaksi 120 dtk: program ditutup (panggil app.keep_alive() agar tetap berjalan)."); stop(); return; }
