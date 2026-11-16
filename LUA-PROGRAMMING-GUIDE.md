@@ -1,6 +1,6 @@
 # Panduan Lua untuk Aplikasi VynWatch
 
-Program Apps dan Games yang diunduh dijalankan di firmware ESP32 menggunakan Lua 5.4. Ini Lua yang dibatasi agar sesuai dengan VynWatch, bukan akses Lua penuh ke perangkat. Program dapat menggambar pada OLED, membaca input perangkat, membaca sensor gerak, baterai, suhu chip, dan waktu, mengontrol LED RGB, membaca tingkat suara mikrofon, mengeluarkan bunyi buzzer, menyimpan state sementara maupun data persisten per aplikasi/game di NVS, dan menangani callback input.
+Program Apps dan Games yang diunduh dijalankan di firmware ESP32 menggunakan Lua 5.4. Ini Lua yang dibatasi agar sesuai dengan VynWatch, bukan akses Lua penuh ke perangkat. Program dapat menggambar pada OLED, membaca input perangkat, membaca sensor gerak, baterai, suhu chip, dan waktu, mengontrol LED RGB, membaca tingkat suara mikrofon, meminta pengguna mengetik teks lewat keyboard virtual, mengeluarkan bunyi buzzer, menyimpan state sementara maupun data persisten per aplikasi/game di NVS, dan menangani callback input.
 
 ## Membuat paket aplikasi/game
 
@@ -115,6 +115,7 @@ Callback input bersifat opsional:
 | `on_sw(pressed)` | Boolean | Dipanggil saat SW ditekan (`true`) dan dilepas (`false`) selama aplikasi masih berjalan. Long-press tetap menjadi kontrol sistem untuk keluar dari aplikasi, bukan event khusus Lua; jika aplikasi keluar saat SW masih ditekan, callback release tidak dikirim. |
 | `on_swipe(direction)` | `"left"` atau `"right"` | Dipanggil saat firmware mendeteksi gesture swipe yang valid. Gesture turun dipetakan ke `"right"` dan gesture naik ke `"left"` oleh pemetaan pad firmware. |
 | `on_encoder(step)` | Integer `+1` atau `-1` | Dipanggil sekali untuk setiap langkah encoder. Putaran cepat dikirim sebagai beberapa callback langkah, bukan satu delta besar. |
+| `on_text(text, submitted)` | String dan boolean | Hasil `keyboard.request()`: dipanggil sekali setelah pengguna menutup keyboard virtual. Lihat bagian [Keyboard virtual](#keyboard-virtual-input-teks). |
 
 Callback input tidak menerima klik tunggal/ganda atau event hold. Touch callback melaporkan transisi kontak yang sudah distabilkan, sehingga satu gerakan swipe dapat memicu transisi sentuh dan callback swipe. SW long-press mengeluarkan aplikasi melalui UI sistem; jangan mengandalkan callback `on_sw` untuk memproses durasi tahan.
 
@@ -249,6 +250,55 @@ function draw()
 end
 ```
 
+### Keyboard virtual (input teks)
+
+Program dapat meminta pengguna mengetik teks lewat keyboard virtual perangkat (carousel karakter yang sama dengan chat). Program tidak menggambar atau mengendalikan keyboard; ia hanya meminta teks dan menerima hasilnya di callback `on_text`.
+
+```lua
+keyboard.request(prompt [, initial [, max_len]])
+```
+
+| Argumen | Isi |
+|---|---|
+| `prompt` | String petunjuk yang tampil di kolom teks selama kolom masih kosong. ASCII cetak, maksimal 15 karakter (sisanya dipotong). |
+| `initial` | Opsional. Isi awal kolom teks (default kosong). Dipotong sesuai `max_len`. |
+| `max_len` | Opsional. Panjang teks maksimum, bilangan bulat 1–100 (default 32). Di luar rentang ini menghasilkan runtime error. |
+
+`keyboard.request` **tidak memblokir** dan menghasilkan `true` bila permintaan diterima, atau `false` bila ditolak karena permintaan sebelumnya masih terbuka. Keyboard dibuka firmware segera setelah callback yang memanggilnya selesai. Hasilnya datang lewat callback:
+
+| Callback | Perilaku |
+|---|---|
+| `on_text(text, submitted)` | `submitted = true` dan `text` berisi teks bila pengguna menekan ikon kirim (teks boleh kosong). `submitted = false` dan `text = ""` bila pengguna membatalkan lewat ikon tutup. Dipanggil tepat sekali per permintaan yang diterima. |
+
+Selama keyboard terbuka, `draw()` dan callback input (`on_touch`, `on_sw`, `on_swipe`, `on_encoder`) dijeda, lalu berlanjut setelah `on_text` dipanggil. Program tetap berjalan dan state-nya tidak hilang. Keyboard hanya mendukung ASCII; karakter lain diabaikan. Tombol mikrofon di keyboard (speech-to-text) hanya aktif bila Wi-Fi terhubung, dan hasilnya tetap masuk ke kolom teks. Jika program dihentikan, dihapus, atau layar berpindah ke laman lain selagi keyboard terbuka, permintaan dibatalkan dan `on_text` tidak dipanggil. Di dalam `on_text` program boleh langsung memanggil `keyboard.request` lagi.
+
+Karena permintaan dibuka setelah callback selesai, jangan mengandalkan `keyboard.request` di tingkat teratas chunk saat aplikasi pertama kali dimuat; panggil dari `draw()` atau callback input, atau gunakan flag seperti pada contoh.
+
+```lua
+local name = storage.get("name") or "(kosong)"
+local asked = false
+
+function draw()
+  screen.text(4, 18, "Nama:")
+  screen.text(4, 30, name)
+  screen.text(4, 50, "Klik SW: ganti nama")
+end
+
+function on_sw(pressed)
+  if pressed and not asked then
+    asked = keyboard.request("Nama", name ~= "(kosong)" and name or "", 16)
+  end
+end
+
+function on_text(text, submitted)
+  asked = false
+  if submitted and #text > 0 then
+    name = text
+    storage.set("name", name)
+  end
+end
+```
+
 ### Metadata dan kontrol aplikasi
 
 Tabel `app` hanya-baca dari sisi program melalui API publik yang disediakan:
@@ -370,5 +420,5 @@ Thumbnail OLED berukuran 16×16 piksel, monokrom, MSB-first. Representasi hex-ny
 - Jangan pernah memasukkan kredensial, token, atau rahasia dalam source program.
 - Sandbox tidak membuat input uploader/database aman secara otomatis. Aturan RTDB menentukan siapa yang dapat membaca dan menulis; hindari aturan publik untuk produksi.
 - Source program dibatasi 16 KiB, alokasi interpreter 48 KiB, dan callback/initialization Lua masing-masing dibatasi sekitar 30.000 instruksi.
-- Operasi hardware terbatas ke layar, status input, buzzer, LED RGB, serta pembacaan sensor gerak, baterai, suhu chip, waktu, dan tingkat suara mikrofon (pembacaan semuanya hanya-baca; tidak ada rekaman audio). Program tidak dapat mengakses Wi-Fi, BLE langsung, filesystem, proses lain, atau GPIO arbitrer.
+- Operasi hardware terbatas ke layar, status input, permintaan teks lewat keyboard virtual (`keyboard.request`), buzzer, LED RGB, serta pembacaan sensor gerak, baterai, suhu chip, waktu, dan tingkat suara mikrofon (pembacaan semuanya hanya-baca; tidak ada rekaman audio). Program tidak dapat mengakses Wi-Fi, BLE langsung, filesystem, proses lain, atau GPIO arbitrer.
 - Memory exhaustion atau runtime error mengakhiri aplikasi. Gunakan state lokal kecil dan render layar di `draw()` alih-alih menjalankan loop.
