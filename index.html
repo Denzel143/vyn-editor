@@ -1133,8 +1133,11 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
       rgb:    { set: "nnn", auto: "" },
       mic:    { level: "" },
       keyboard: { request: "s" },
+      vyn:    { request: "s", has: "s", list: "", version: null },
       app:    { id: null, name: null, keep_alive: "" }
     };
+    // Device API v1: nama resource sama dengan skema src/vyn_api.cpp
+    const VYN_RES = set("device.info system.uptime system.time system.temperature power.battery motion.orientation motion.accel audio.level input.pad input.switch indicator.rgb audio.tone");
     const LIBS = {
       string: set("byte char find format gmatch gsub len lower match rep reverse sub upper pack packsize unpack"),
       table:  set("concat insert move pack remove sort unpack"),
@@ -1142,7 +1145,7 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
       utf8:   set("char charpattern codepoint len offset codes")
     };
     const FORBIDDEN = set("load loadstring loadfile dofile require io os package coroutine debug collectgarbage print warn rawset setmetatable getmetatable");
-    const KNOWN = set("assert error ipairs next pairs pcall rawequal rawget rawlen select tonumber tostring type xpcall _G _VERSION string table math utf8 screen input storage sound imu device rgb mic keyboard app");
+    const KNOWN = set("assert error ipairs next pairs pcall rawequal rawget rawlen select tonumber tostring type xpcall _G _VERSION string table math utf8 screen input storage sound imu device rgb mic keyboard vyn app");
     const CALLBACKS = { draw: [], on_touch: ["pad", "touched"], on_sw: ["pressed"], on_swipe: ["direction"], on_encoder: ["step"], on_text: ["text", "submitted"] };
     const HINTS = { unpack: "gunakan table.unpack", loadstring: "", setfenv: "tidak ada di Lua 5.4", getfenv: "tidak ada di Lua 5.4", bit: "gunakan operator & | ~ << >>", bit32: "gunakan operator & | ~ << >>" };
 
@@ -1340,6 +1343,15 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
             else if (m.kind === "str" && !(m.value.trim() !== "" && isFinite(Number(m.value)))) add("error", m.line || t.line, m.col || t.col, `argumen ke-3 keyboard.request (max_len) harus angka, bukan string "${m.value.slice(0, 20)}"`);
             else if (m.kind === "num" && !(Number.isInteger(m.value) && m.value >= 1 && m.value <= 100)) add("error", m.line || t.line, m.col || t.col, "keyboard.request: max_len harus bilangan bulat 1–100 (di luar itu menghentikan aplikasi)");
           }
+          return;
+        }
+        if (name === "vyn.request") {   // vyn.request(resource [, params_table])
+          if (!args.length) { add("error", t.line, t.col, "vyn.request membutuhkan minimal 1 argumen (nama resource)"); return; }
+          if (args.length > 2) add("warning", t.line, t.col, "vyn.request hanya memakai 2 argumen (resource, params); sisanya diabaikan");
+          const a = args[0], b = args[1];
+          if (a.kind === "str" && !VYN_RES.has(a.value)) add("warning", a.line || t.line, a.col || t.col, `vyn.request: resource "${a.value}" tidak dikenal di Device API v1 (hasilnya error=\"unknown_resource\")`);
+          else if (a.kind === "num" || a.kind === "table" || a.kind === "func" || a.kind === "lit") add("error", a.line || t.line, a.col || t.col, "argumen ke-1 vyn.request harus string (nama resource)");
+          if (b && (b.kind === "num" || b.kind === "str" || b.kind === "func")) add("error", b.line || t.line, b.col || t.col, "argumen ke-2 vyn.request harus tabel params");
           return;
         }
         const last = args[args.length - 1];
@@ -1974,6 +1986,7 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
   });
 
   // ===== Simulator VynWatch (Lua 5.4 via wasmoon; API mengikuti chatbox_esp32s3.ino + verifikator) =====
+  // Arsitektur 3 lapis (lihat panduan): H.* = HAL simulator, broker Lua di bawah = Device API (vyn.request), imu/device/rgb/mic/sound/input = pembungkus.
   // Mengikuti app_lua.cpp: imu.angle() = x(pitch), y(yaw), z(roll) dalam derajat; imu.accel() = x(kanan), y(atas), z(keluar layar) dalam g; keduanya float.
   // device.time() = TABEL {weekday(1=Sen..7=Min), day, month, year, hour, minute, second}; nil bila belum sinkron.
   // storage.* bertipe seperti firmware: integer / float32 / boolean / string dikembalikan dengan tipe aslinya; set() -> true, remove() -> apakah kunci ada.
@@ -2005,19 +2018,96 @@ screen = {
   text = function(x, y, s) text(x, y, numstr(s)) end,
   line = H.line, rect = H.rect, fill_rect = H.frect, circle = H.circle, fill_circle = H.fcircle,
   width = function() return 128 end, height = function() return 64 end }
-input = { touch = H.touch, sw = H.sw, millis = H.millis }
 storage = {
   get = function(k) k = numstr(k); local v = H.sget(k); if v ~= nil and H.sgett(k) == "f" then v = v + 0.0 end return v end,
   set = function(k, v) local t = type(v); return H.sset(numstr(k), v, t == "number" and mtype(v) or t) end,
   remove = function(k) return H.sdel(numstr(k)) end }
-sound = { buzzer = H.buzzer }
-imu = { angle = function() return tonumber(H.imu(1)), tonumber(H.imu(2)), tonumber(H.imu(3)) end,
-        accel = function() return tonumber(H.imu(4)), tonumber(H.imu(5)), tonumber(H.imu(6)) end }
-device = { battery = H.battery, temperature = function() return tonumber(H.temp()) end,
-  time = function() local w = H.time(1); if w == nil then return nil end
-    return { weekday = w, day = H.time(2), month = H.time(3), year = H.time(4), hour = H.time(5), minute = H.time(6), second = H.time(7) } end }
-rgb = { set = H.rgb, auto = H.rgbAuto }
-mic = { level = H.mic }
+-- ===== LAPISAN 2: broker Device API (skema IDENTIK dengan src/vyn_api.cpp) =====
+-- ===== LAPISAN 1: HAL simulator = fungsi host H.* (nilai dari slider/kontrol simulator); hanya broker yang memanggilnya =====
+local VER, RES, floor = 1, {}, math.floor
+-- field: {nama, tipe, min, max}; param: {nama, tipe, min, max, wajib}
+local function def(name, params, fields, h) RES[name] = { p = params, f = fields, h = h } end
+def("device.info", {}, {{"api","int"},{"display_w","int"},{"display_h","int"},{"pads","int"}},
+  function() return "ok", { api = VER, display_w = 128, display_h = 64, pads = 4 } end)
+def("system.uptime", {}, {{"ms","int"}}, function() return "ok", { ms = H.millis() } end)
+def("system.time", {}, {{"weekday","int",1,7},{"day","int",1,31},{"month","int",1,12},{"year","int",2000,2200},{"hour","int",0,23},{"minute","int",0,59},{"second","int",0,59}},
+  function() local w = H.time(1); if w == nil then return "not_ready" end
+    return "ok", { weekday = w, day = H.time(2), month = H.time(3), year = H.time(4), hour = H.time(5), minute = H.time(6), second = H.time(7) } end)
+def("system.temperature", {}, {{"celsius","float",-50,200}}, function() return "ok", { celsius = tonumber(H.temp()) } end)
+def("power.battery", {}, {{"percent","int",0,100}}, function() return "ok", { percent = H.battery() } end)
+def("motion.orientation", {}, {{"pitch","float",-90,90},{"yaw","float",-180,180},{"roll","float",-180,180}},
+  function() return "ok", { pitch = tonumber(H.imu(1)), yaw = tonumber(H.imu(2)), roll = tonumber(H.imu(3)) } end)
+def("motion.accel", {}, {{"x","float",-16,16},{"y","float",-16,16},{"z","float",-16,16}},
+  function() return "ok", { x = tonumber(H.imu(4)), y = tonumber(H.imu(5)), z = tonumber(H.imu(6)) } end)
+def("audio.level", {}, {{"level","int",0,100}}, function() return "ok", { level = H.mic() } end)
+def("input.pad", {{"pad","int",1,4,true}}, {{"down","bool"}}, function(p) return "ok", { down = H.touch(p.pad) } end)
+def("input.switch", {}, {{"down","bool"}}, function() return "ok", { down = H.sw() } end)
+def("indicator.rgb", {{"r","int",0,255},{"g","int",0,255},{"b","int",0,255},{"auto","bool"}}, {},
+  function(p)
+    if p.auto then H.rgbAuto(); return "ok", {} end
+    if p.r == nil or p.g == nil or p.b == nil then return "bad_param", "r, g, b are required" end
+    H.rgb(p.r, p.g, p.b); return "ok", {}
+  end)
+def("audio.tone", {{"freq","int",100,10000,true},{"ms","int",1,2000,true}}, {}, function(p) H.buzzer(p.freq, p.ms); return "ok", {} end)
+
+local function chk(specs, p)
+  for k, v in pairs(p) do
+    local s
+    for _, q in ipairs(specs) do if q[1] == k then s = q end end
+    if not s then return "unknown param '" .. tostring(k) .. "'" end
+    local t = type(v)
+    if s[2] == "bool" then
+      if t ~= "boolean" then return k .. " must be a boolean" end
+    elseif t ~= "number" or (s[2] == "int" and v ~= floor(v)) then
+      return k .. (s[2] == "int" and " must be an integer" or " must be a number")
+    elseif s[3] and (v < s[3] or v > s[4]) then
+      return k .. " must be " .. s[3] .. ".." .. s[4]
+    end
+  end
+  for _, q in ipairs(specs) do if q[5] and p[q[1]] == nil then return q[1] .. " is required" end end
+end
+
+-- vyn.request(resource [, params]) -> { ok, resource, ts, data | error, detail }
+local function request(name, params)
+  if type(name) ~= "string" then error("bad argument #1 to 'request' (string expected, got " .. type(name) .. ")", 2) end
+  if params ~= nil and type(params) ~= "table" then error("bad argument #2 to 'request' (table expected, got " .. type(params) .. ")", 2) end
+  params = params or {}
+  local env, spec = { ok = false, resource = name, ts = H.millis() }, RES[name]
+  if not spec then env.error = "unknown_resource"; return env end
+  local d = chk(spec.p, params)
+  if d then env.error = "bad_param"; env.detail = d; return env end
+  local st, vals = spec.h(params)
+  if st ~= "ok" then env.error = st; if st == "bad_param" then env.detail = vals end; return env end
+  local data = {}
+  for _, f in ipairs(spec.f) do   -- normalisasi seperti broker firmware: urutan skema, tipe dipaksa, nilai dijepit ke rentang
+    local v = vals[f[1]]
+    if f[2] ~= "bool" then
+      if f[3] then v = v < f[3] and f[3] or (v > f[4] and f[4] or v) end
+      if f[2] == "int" then v = floor(v + 0.5) else v = v + 0.0 end
+    end
+    data[f[1]] = v
+  end
+  env.ok, env.data = true, data
+  return env
+end
+vyn = { version = VER, request = request,
+  has = function(n) return type(n) == "string" and RES[n] ~= nil end,
+  list = function() local t = {}; for k in pairs(RES) do t[#t + 1] = k end; table.sort(t); return t end }
+
+-- Pembungkus kompatibilitas (hanya lewat request): data atau nil bila belum siap; parameter salah = error Lua
+local function rd(name, params) local e = request(name, params); if e.error == "bad_param" then error(e.detail, 3) end; return e.data end
+input = { touch = function(p) local d = rd("input.pad", { pad = tonumber(p) }); return d ~= nil and d.down end,
+  sw = function() local d = rd("input.switch"); return d ~= nil and d.down end,
+  millis = function() local d = rd("system.uptime"); return d and d.ms or 0 end }
+sound = { buzzer = function(f, d) rd("audio.tone", { freq = tonumber(f), ms = tonumber(d) }) end }
+imu = { angle = function() local d = rd("motion.orientation"); if not d then return nil end return d.pitch, d.yaw, d.roll end,
+        accel = function() local d = rd("motion.accel"); if not d then return nil end return d.x, d.y, d.z end }
+device = { battery = function() local d = rd("power.battery"); return d and d.percent end,
+  temperature = function() local d = rd("system.temperature"); return d and d.celsius end,
+  time = function() return rd("system.time") end }
+rgb = { set = function(r, g, b) rd("indicator.rgb", { r = tonumber(r), g = tonumber(g), b = tonumber(b) }) end,
+  auto = function() rd("indicator.rgb", { auto = true }) end }
+mic = { level = function() local d = rd("audio.level"); return d and d.level end }
 keyboard = { request = H.kbreq }
 app = { id = H.appid, name = H.appname, keep_alive = H.keep }
 -- dibuang firmware (removeGlobal): dofile loadfile load collectgarbage print warn rawset setmetatable getmetatable
