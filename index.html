@@ -1891,7 +1891,7 @@ function __gc() collect(); collect() end
     const padDown = [false, false, false, false];
     let swDown = false;
     let disp = null, lastAct = 0, swTimer = 0, fN = 0, fMs = 0, fT0 = 0;
-    let kbOpen = false, kb = null;   // keyboard.request sedang terbuka: draw() dan callback input dijeda (seperti firmware)
+    let kbOpen = false, kb = null, kbPend = null;   // keyboard.request sedang terbuka: draw() dan callback input dijeda (seperti firmware)
     // ---------- Keyboard virtual (meniru layar STATE_KEYBOARD di firmware) ----------
     // Encoder/swipe = geser karakter atau aksi, klik SW = pilih, tahan SW = pindah baris karakter <-> baris aksi.
     const KBMAP = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?@-*/+<>'\"()&%#:;=_";
@@ -1999,6 +1999,7 @@ function __gc() collect(); collect() end
         return;
       }
       guard(() => call("on_sw", down));
+      if (!down && kbPend && running) { kb = kbPend; kbPend = null; kb.swIgnore = false; kbOpen = true; touchAct(); say("⌨ SW dilepas: keyboard virtual terbuka."); return; }
       if (down && running && $("simDev").checked) swTimer = setTimeout(() => { if (swDown && running && !kbOpen) { say("SW ditahan ≥ 500 ms: keluar dari program (seperti perangkat)."); stop(); } }, 500);
     };
 
@@ -2148,9 +2149,10 @@ function __gc() collect(); collect() end
         ini = (ini === undefined || ini === null) ? "" : Sx(ini, "keyboard.request", 2);
         mx = (mx === undefined || mx === null) ? 32 : NI(mx, "keyboard.request", 3);
         if (mx < 1 || mx > 100) throw argErr("keyboard.request", 3, "max_len must be 1..100");
-        if (kbOpen) return false;
+        if (kbOpen || kbPend) return false;
         const ascii = v => v.replace(/[^\x20-\x7E]/g, "");
         kb = { prompt: ascii(p).slice(0, 15), text: ascii(ini).slice(0, mx), max: mx, ci: 0, row: false, ai: 0, confirm: false, yes: false, act: performance.now(), swIgnore: swDown, long: false };
+        if (swDown) { kbPend = kb; kb = null; say(`⌨ keyboard.request("${kbPend.prompt}") dari penekanan SW: menunggu SW dilepas (tahan lama = keluar program).`); return true; }
         kbOpen = true; say(`⌨ keyboard.request("${kb.prompt}", max ${mx}) — keyboard virtual terbuka.`);
         return true;
       },
@@ -2204,7 +2206,7 @@ function __gc() collect(); collect() end
     };
     const cleanMsg = e => { const m = String((e && e.message) || e).replace(/^Error:\s*/, "").split("\n")[0]; return /timeout/i.test(m) ? "melewati batas waktu eksekusi (loop terlalu lama); aplikasi dihentikan" : m; };
     function stop(quiet) {
-      runId++; loader.abort(); running = false; disp = null; kbOpen = false; kb = null; clearTimeout(swTimer); cancelAnimationFrame(raf);
+      runId++; loader.abort(); running = false; disp = null; kbOpen = false; kb = null; kbPend = null; clearTimeout(swTimer); cancelAnimationFrame(raf);
       if (eng) { try { eng.global.close(); } catch (e) {} eng = null; }
       ledAuto(); if (!quiet) setState("Berhenti");
     }
