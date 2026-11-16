@@ -2611,7 +2611,7 @@ function __gc() collect(); collect() end
     };
     const cleanMsg = e => { const m = String((e && e.message) || e).replace(/^Error:\s*/, "").split("\n")[0]; 
       if (/timeout/i.test(m)) return "melewati batas waktu eksekusi (loop terlalu lama); aplikasi dihentikan";
-      if (/not enough memory|memory limit|out of memory/i.test(m)) return "melebihi batas memori interpreter (48 KiB); aplikasi dihentikan";
+      if (/not enough memory|memory limit|out of memory/i.test(m)) return "melebihi batas memori interpreter (firmware 48 KiB; simulator memakai ±1,4–1,7× memori per nilai Lua, jadi batasnya sudah dilonggarkan); aplikasi dihentikan";
       if (/unreachable|memory access out of bounds|^abort|RuntimeError/i.test(m)) return "mesin Lua simulator berhenti tak terduga (" + m + "); biasanya akibat memori habis atau rekursi terlalu dalam";
       return m; };
     function stop(quiet) {
@@ -2637,12 +2637,16 @@ function __gc() collect(); collect() end
         eng = e2; loader.set(86);
         for (const [k, v] of Object.entries(host())) eng.global.set("__h_" + k, v);
         await eng.doString(LUA_BOOT);
-        const memU1 = eng.global.getMemoryUsed();   // baseline setara firmware (5 pustaka + fungsi host)
         await eng.doString(LUA_PRELUDE);
         const gc = eng.global.get("__gc"); gc(); eng.global.set("__gc", undefined); gcFn = gc; callN = 0;
-        // Batas 48 KB seperti limitedAllocator di firmware, di luar overhead prelude. +2,5 KB: closure fungsi host JS (≈4,2 KB) vs tabel API
-        // firmware (≈2,5 KB) dan thread per panggilan wasmoon. Hasilnya perkiraan (±1–2 KB), sengaja condong longgar agar tidak ada error palsu.
-        eng.global.setMemoryMax(48 * 1024 + 2560 + (eng.global.getMemoryUsed() - memU1));
+        // Batas memori simulator = kelonggaran aplikasi di firmware, DIKALIKAN faktor kompensasi.
+        // Firmware (LUA_32BITS): nilai Lua 8 B; sisa kelonggaran aplikasi = 48 KiB - (5 pustaka + tabel API) ≈ 48 KiB - 10,9 KB ≈ 37,3 KiB.
+        // Simulator (wasmoon, Lua 64-bit): nilai Lua 16 B (array 2x, node hash 1,5x, konstanta/stack/upvalue ikut membesar).
+        // Diukur dengan beban yang sama (array, objek {x,y,vx,vy}, hash string, closure): program yang muat di firmware butuh
+        // 1,41x-1,72x kelonggaran di simulator. Faktor 1,75x menjamin tidak ada error palsu; konsekuensinya program yang melebihi
+        // firmware kurang dari ±25-75% bisa lolos di simulator tetapi tetap gagal di perangkat.
+        const FW_HEADROOM = 48 * 1024 - 10900, SIM_FACTOR = 1.75;
+        eng.global.setMemoryMax(eng.global.getMemoryUsed() + Math.round(FW_HEADROOM * SIM_FACTOR));
         if (my !== runId) return;
         const runner = eng.global.get("__run"), dsp = eng.global.get("__call");
         eng.global.set("__run", undefined); eng.global.set("__call", undefined);   // disembunyikan dari program
