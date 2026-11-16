@@ -179,6 +179,20 @@
     .vgrid input, .vgrid select { padding:6px 8px; font-size:12px; }
     .vgrid input[type=checkbox] { width:auto; justify-self:start; }
     @media(max-width:700px) { .vcols { grid-template-columns:1fr; } }
+    /* Inline (layar lebar): Elemen, Properti, lalu Lapisan berjajar di bagian atas; kanvas dan tombol di bawahnya */
+    @media(min-width:701px) {
+      #vSec:not(.vfocus):not([hidden]) { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,.8fr); column-gap:16px; align-items:start;
+        grid-template-areas:"pal prop ls" "cv cv cv" "tool tool tool" "opts opts opts" "info info info"; }
+      #vSec:not(.vfocus) #vPal { grid-area:pal; max-height:320px; overflow:auto; }
+      #vSec:not(.vfocus) .vcols { display:contents; }
+      #vSec:not(.vfocus) .vcols > div:last-child { grid-area:prop; }
+      #vSec:not(.vfocus) .vcols > div:first-child { grid-area:ls; }
+      #vSec:not(.vfocus) .vcols h3 { margin-top:10px; }
+      #vSec:not(.vfocus) #vCv { grid-area:cv; }
+      #vSec:not(.vfocus) .vtool { grid-area:tool; }
+      #vSec:not(.vfocus) .vopts { grid-area:opts; }
+      #vSec:not(.vfocus) .vinfo { grid-area:info; }
+    }
 
     /* ===================================================================
        Penyempurnaan mobile
@@ -415,9 +429,20 @@
       #vSec.vfocus .vopts { justify-content:flex-start; }
       #vSec.vfocus .vopts .vx { display:inline; }
       #vSec.vfocus[data-ptab] #vPal { display:grid; align-self:stretch; contain:size; min-height:0; grid-template-columns:repeat(auto-fill, minmax(92px, 1fr)); }
-      #vSec.vfocus[data-ptab] .vcols { display:grid; grid-template-columns:minmax(96px,.8fr) minmax(0,1.4fr); }
-      #vSec.vfocus[data-ptab] .vcols > div { display:flex; }
+      #vSec.vfocus[data-ptab] .vcols { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(96px,.8fr); }
+      #vSec.vfocus[data-ptab] .vcols > div:first-child, #vSec.vfocus[data-ptab] .vcols > div:last-child { display:flex; }
+      #vSec.vfocus .vcols > div:last-child { order:-1; } /* Properti di kiri, Lapisan di kanannya */
       #vSec.vfocus .vcols h3 { display:block; }
+    }
+    /* Layar cukup lebar: Elemen | Properti | Lapisan berjajar di kolom kanan, mulai dari atas */
+    @media (min-width:1000px) and (min-aspect-ratio:7/6) {
+      #vSec.vfocus {
+        grid-template-columns:minmax(0,1.5fr) minmax(0,.9fr) minmax(0,1fr) minmax(0,.75fr);
+        grid-template-areas:"head head head head" "cv pal prop ls" "tool pal prop ls" "opts pal prop ls" "info pal prop ls" ". pal prop ls";
+      }
+      #vSec.vfocus[data-ptab] .vcols { display:contents; }
+      #vSec.vfocus .vcols > div:last-child { grid-area:prop; }
+      #vSec.vfocus .vcols > div:first-child { grid-area:ls; }
     }
 
     /* ===== Tombol & dialog bersihkan area kerja ===== */
@@ -433,11 +458,14 @@
     #agOverlay .agin textarea { max-height:min(40dvh, calc(var(--vv-h, 100dvh) * .3)); }
     html.kb-open #agOverlay .sim-card { padding-bottom:12px; }
     html.kb-open #agOverlay .agin textarea { min-height:48px; }
+    #draftInfo { min-height:16px; margin:0 0 6px; font-size:12px; color:var(--sub); }
+    #draftInfo.bad { color:var(--warn); }
   </style>
 </head>
 <body>
 <main>
   <h1>VynWatch Creator</h1>
+  <div id="draftInfo" role="status" aria-live="polite"></div>
   <div class="mtabs" role="tablist">
     <div class="mtab active" data-main="app" role="tab">Editor Aplikasi/Game</div>
     <div class="mtab" data-main="face" role="tab">Editor Watch Face</div>
@@ -525,7 +553,7 @@
             <label><input type="checkbox" id="vDot" checked> Gaya piksel<span class="vx"> OLED</span></label>
           </div>
           <div class="fctl vinfo"><span id="vCnt"></span><span id="vPos"></span><span id="vNote" style="color:#e8c15a"></span></div>
-          <div class="vptabs" role="tablist"><button type="button" data-p="pal" class="on">Elemen</button><button type="button" data-p="ls">Lapisan</button><button type="button" data-p="insp">Properti</button></div>
+          <div class="vptabs" role="tablist"><button type="button" data-p="pal" class="on">Elemen</button><button type="button" data-p="insp">Properti</button><button type="button" data-p="ls">Lapisan</button></div>
           <div class="vcols">
             <div><h3>Lapisan</h3><ul id="vLayers"></ul></div>
             <div><h3>Properti</h3><div id="vInsp"></div></div>
@@ -3294,20 +3322,137 @@ function __gc() collect(); collect() end
   })();
 
   // ======================================================================
+  // ===== Draf otomatis (LocalStorage): identitas paket, kode, riwayat chat AI, tab aktif =====
+  // ======================================================================
+  const Draft = (() => {
+    const K = { app: "vwc:v1:app", face: "vwc:v1:face", ui: "vwc:v1:ui", chat: "vwc:v1:chat" };
+    const info = $("draftInfo");
+    const get = k => { try { const t = localStorage.getItem(k); return t ? JSON.parse(t) : null; } catch { return null; } };
+    const put = (k, t) => { try { localStorage.setItem(k, t); return true; } catch { return false; } };
+    const note = (text, bad) => { info.textContent = text; info.classList.toggle("bad", !!bad); };
+    const clock = () => new Date().toTimeString().slice(0, 8);
+    const str = v => (typeof v === "string" ? v : "");
+
+    // ----- Pulihkan isian paket & kode -----
+    const a = get(K.app);
+    if (a && typeof a === "object") {
+      $("id").value = str(a.id);
+      $("type").value = a.type === "app" ? "app" : "game";
+      $("name").value = str(a.name);
+      $("version").value = typeof a.version === "string" ? a.version : "1.0.0";
+      $("description").value = str(a.description);
+      $("thumbnail").value = str(a.thumbnail);
+      if (typeof a.code === "string") editor.setValue(a.code, -1);
+    }
+    const f = get(K.face);
+    if (f && typeof f === "object") {
+      $("fId").value = str(f.id);
+      if (FACE.TAGS.includes(f.tag)) $("fTag").value = f.tag;
+      $("fName").value = str(f.name);
+      $("fVersion").value = typeof f.version === "string" ? f.version : "1.0.0";
+      $("fDesc").value = str(f.desc);
+      if (typeof f.dsl === "string") fEditor.setValue(f.dsl, -1);
+    }
+    const ui = get(K.ui);
+    if (ui && (ui.main === "app" || ui.main === "face")) setMainTab(ui.main);
+
+    // ----- Ambil state saat ini -----
+    const appState = () => ({ id: $("id").value, type: $("type").value, name: $("name").value, version: $("version").value, description: $("description").value, thumbnail: $("thumbnail").value, code: editor.getValue() });
+    const faceState = () => ({ id: $("fId").value, tag: $("fTag").value, name: $("fName").value, version: $("fVersion").value, desc: $("fDesc").value, dsl: fEditor.getValue() });
+    const uiState = () => ({ main: document.querySelector(".mtab.active")?.dataset.main || "app" });
+
+    // ----- Chat AI -----
+    const MAXH = 8, MAXV = 80;
+    const toURL = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); });
+    const toFile = (d, name) => { const bin = atob(d.slice(d.indexOf(",") + 1)), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new File([u], name, { type: "application/zip" }); };
+    let chat = null;
+
+    function loadChat() {
+      const c = get(K.chat), out = { hist: { app: [], face: [] }, view: { app: [], face: [] }, input: { app: "", face: "" } };
+      if (!c || typeof c !== "object") return out;
+      for (const m of ["app", "face"]) {
+        const o = c.modes && c.modes[m]; if (!o) continue;
+        if (Array.isArray(o.hist)) out.hist[m] = o.hist.filter(h => h && (h.role === "user" || h.role === "model") && typeof h.text === "string").slice(-MAXH);
+        if (Array.isArray(o.view)) out.view[m] = o.view.filter(v => v && typeof v.text === "string").slice(-MAXV).map(v => {
+          const it = { cls: ["ai", "user", "err"].includes(v.cls) ? v.cls : "ai", text: v.text };
+          if (v.zip && typeof v.zip.data === "string" && typeof v.zip.name === "string") { try { it.zip = toFile(v.zip.data, v.zip.name); it.zipData = v.zip.data; } catch { } }
+          return it;
+        });
+        out.input[m] = str(c.input && c.input[m]);
+      }
+      return out;
+    }
+    // zipMode: "all" simpan semua ZIP, "last" hanya ZIP terbaru tiap mode, "none" tanpa ZIP
+    function chatJSON(zipMode, hCap, vCap) {
+      const modes = {};
+      for (const m of ["app", "face"]) {
+        const view = chat.view[m].slice(-vCap);
+        let lastZip = -1; view.forEach((it, i) => { if (it.zip) lastZip = i; });
+        modes[m] = {
+          hist: chat.hist[m].slice(-hCap),
+          view: view.map((it, i) => {
+            const o = { cls: it.cls, text: it.text };
+            if (it.zip && zipMode !== "none" && (zipMode === "all" || i === lastZip)) {
+              if (it.zipData) o.zip = { name: it.zip.name, data: it.zipData };
+              else if (!it.zipBusy) { it.zipBusy = true; toURL(it.zip).then(d => { it.zipData = d; sched(); }).catch(() => { }); }
+            }
+            return o;
+          })
+        };
+      }
+      return JSON.stringify({ v: 1, modes, input: chat.input });
+    }
+    // Cadangan bila kuota penuh: ZIP terbaru saja, lalu tanpa ZIP, lalu riwayat dipangkas
+    function writeChatFallback() {
+      for (const [z, h, v] of [["last", MAXH, MAXV], ["none", MAXH, MAXV], ["none", 4, 30]]) if (put(K.chat, chatJSON(z, h, v))) return true;
+      return false;
+    }
+
+    // ----- Simpan (debounce) -----
+    const last = {};
+    let timer = 0;
+    function save() {
+      timer = 0; let ok = true;
+      for (const [k, st] of [[K.app, appState()], [K.face, faceState()], [K.ui, uiState()]]) {
+        const t = JSON.stringify(st); if (last[k] === t) continue;
+        if (put(k, t)) last[k] = t; else ok = false;
+      }
+      if (chat) { const t = chatJSON("all", MAXH, MAXV); if (t !== last[K.chat]) { if (put(K.chat, t) || writeChatFallback()) last[K.chat] = t; else ok = false; } }
+      note(ok ? "Draf tersimpan otomatis di perangkat ini · " + clock() : "Draf gagal disimpan: penyimpanan browser penuh atau dinonaktifkan.", !ok);
+    }
+    function sched() { clearTimeout(timer); timer = setTimeout(save, 500); }
+    const flush = () => { if (timer) { clearTimeout(timer); save(); } };
+
+    for (const ev of ["input", "change"]) document.addEventListener(ev, e => { if (e.target.closest && e.target.closest("#form, #fForm")) sched(); }, true);
+    editor.session.on("change", sched);
+    fEditor.session.on("change", sched);
+    document.querySelectorAll(".mtab").forEach(t => t.addEventListener("click", sched));
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flush(); });
+    addEventListener("pagehide", flush);
+
+    // Isi awal setelah pemulihan supaya perubahan pertama tidak menimpa draf dengan nilai bawaan tanpa sebab
+    last[K.app] = JSON.stringify(appState()); last[K.face] = JSON.stringify(faceState()); last[K.ui] = JSON.stringify(uiState());
+    if (a || f || get(K.chat)) note("Draf dipulihkan dari perangkat ini.");
+
+    return { loadChat, saveChat(c) { chat = c; sched(); } };
+  })();
+
+  // ======================================================================
   // ===== AI Agent (Gemini lewat /api/agent; kunci di env var "API") =====
   // ======================================================================
   (() => {
     const AGENT_URL = "/api/agent", GUIDES = { app: "LUA-PROGRAMMING-GUIDE.md", face: "WATCHFACE-DSL-GUIDE.md" }, MAXFIX = 2;
     const LABEL = { app: "Aplikasi/Game (Lua)", face: "Watch Face (DSL)" };
     const HINT = { app: "Tulis permintaan…", face: "Tulis permintaan…" };
-    const hist = { app: [], face: [] }, view = { app: [], face: [] }, guides = {};
+    const saved = Draft.loadChat(), hist = saved.hist, view = saved.view, inDraft = saved.input, guides = {};
+    const persist = () => Draft.saveChat({ hist, view, input: inDraft });
     let busy = false, ctl = null;
     const setBusy = b => { busy = b; const el = $("agSend"); el.dataset.state = b ? "stop" : "send"; el.setAttribute("aria-label", b ? "Hentikan respons" : "Kirim"); el.title = b ? "Hentikan" : "Kirim"; };
     const mode = () => document.querySelector(".mtab.active").dataset.main;
     const log = $("agLog"), ov = $("agOverlay"), openB = $("agOpen"), ID = /^[A-Za-z0-9_-]{1,24}$/;
 
     function addView(m, cls, text, zip) {
-      const it = { cls, text, zip }; view[m].push(it); if (m === mode()) paint(it);
+      const it = { cls, text, zip }; view[m].push(it); persist(); if (m === mode()) paint(it);
     }
     function paint(it) {
       const d = document.createElement("div"); d.className = "agm " + it.cls; d.textContent = it.text;
@@ -3319,7 +3464,7 @@ function __gc() collect(); collect() end
       log.appendChild(d); log.scrollTop = log.scrollHeight;
     }
     function render() {
-      const m = mode(); $("agMode").textContent = LABEL[m]; $("agIn").placeholder = HINT[m];
+      const m = mode(); $("agMode").textContent = LABEL[m]; $("agIn").placeholder = HINT[m]; $("agIn").value = inDraft[m] || "";
       log.innerHTML = ""; view[m].forEach(paint);
       if (!view[m].length) paint({ cls: "ai", text: "Apa yang ingin dibuat?" });
     }
@@ -3415,7 +3560,7 @@ function __gc() collect(); collect() end
 
     async function send() {
       const text = $("agIn").value.trim(); if (!text || busy) return;
-      const m = mode(); $("agIn").value = ""; setBusy(true); ctl = new AbortController(); const sig = ctl.signal;
+      const m = mode(); $("agIn").value = ""; inDraft[m] = ""; persist(); setBusy(true); ctl = new AbortController(); const sig = ctl.signal;
       addView(m, "user", text);
       try {
         if (!guides[m]) {
@@ -3441,7 +3586,7 @@ function __gc() collect(); collect() end
             if (sig.aborted) break;
             P.end();
             addView(m, "ai", `✓ Paket "${file.name}" dibuat dan semua kolom terisi (verifikasi lulus). Tutup jendela ini untuk melihat dan mengunggah.`, file);
-            hist[m].push({ role: "user", text }, { role: "model", text: raw }); break;
+            hist[m].push({ role: "user", text }, { role: "model", text: raw }); persist(); break;
           }
           P.fail();
           if (n >= MAXFIX) { addView(m, "err", "Hasil AI belum lolos verifikasi, kolom tidak diubah:\n- " + errs.join("\n- ") + "\nCoba perjelas permintaan."); break; }
@@ -3449,7 +3594,7 @@ function __gc() collect(); collect() end
         }
       } catch (e) { if (e.name !== "AbortError" && !sig.aborted) addView(m, "err", "Gagal: " + e.message); }
       finally { const stopped = sig.aborted; ctl = null; setBusy(false); $("agState").textContent = "";
-        if (stopped) { addView(m, "ai", "Respons dihentikan. Pesanmu dikembalikan ke kolom input."); if (!$("agIn").value) $("agIn").value = text; }
+        if (stopped) { addView(m, "ai", "Respons dihentikan. Pesanmu dikembalikan ke kolom input."); if (!$("agIn").value) { $("agIn").value = text; inDraft[m] = text; persist(); } }
         if (!matchMedia("(pointer:coarse)").matches || document.activeElement === document.body) $("agIn").focus({ preventScroll: true }); }
     }
 
@@ -3470,7 +3615,8 @@ function __gc() collect(); collect() end
     }
     $("agSend").addEventListener("mousedown", e => e.preventDefault());
     openB.addEventListener("click", openAg); $("agClose").addEventListener("click", closeAg); $("agSend").addEventListener("click", () => { if (busy) { $("agState").textContent = "Menghentikan…"; ctl?.abort(); } else send(); });
-    $("agReset").addEventListener("click", () => { if (busy) return; const m = mode(); hist[m] = []; view[m] = []; render(); });
+    $("agReset").addEventListener("click", () => { if (busy) return; const m = mode(); hist[m] = []; view[m] = []; persist(); render(); });
+    $("agIn").addEventListener("input", () => { inDraft[mode()] = $("agIn").value; persist(); });
     $("agIn").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
     ov.addEventListener("pointerdown", e => { if (e.target === ov) closeAg(); });
     document.addEventListener("keydown", e => { if (open && e.key === "Escape") { e.preventDefault(); closeAg(); } });
