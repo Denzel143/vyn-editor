@@ -1,7 +1,12 @@
-// Serverless function (Vercel, Node 18+): POST /api/agent  -> satu respons JSON utuh dari Gemini (tanpa streaming)
-// Kunci Gemini dibaca dari Environment Variable bernama "API" (tidak pernah dikirim ke browser).
-const MODEL = "gemini-flash-lite-latest";
-const URL_ = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+// Serverless function (Vercel, Node 18+): POST /api/agent  -> satu respons JSON utuh (tanpa streaming)
+// Provider dipilih lewat body.provider: "gemini" (default) atau "groq".
+// Kunci dibaca dari Environment Variable (tidak pernah dikirim ke browser):
+//   Gemini -> "API"       Groq -> "GROQ_API"
+// Opsional: "GROQ_MODEL" untuk mengganti model Groq tanpa mengubah kode.
+const GEMINI_MODEL = "gemini-flash-lite-latest";
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b"; // model terkuat Groq dgn structured output strict
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 const COMMON = `You are the built-in code-generation engine of "VynWatch Creator", an admin tool that builds store packages for the VynWatch smartwatch (ESP32-S3, 128x64 monochrome OLED).
 Hard rules:
@@ -37,35 +42,83 @@ const SCHEMA = {
     properties: { name: S, id: S, version: S, description: S, tag: { type: "STRING", enum: ["Digital", "Analog", "Hybrid", "Info", "Unik"] }, dsl: S } }
 };
 
+// Versi JSON Schema standar untuk Groq (strict: semua field required, additionalProperties false)
+const JS = { type: "string" };
+const JSON_SCHEMA = {
+  app: { type: "object", additionalProperties: false,
+    required: ["name", "id", "version", "description", "type", "thumbnail", "code"],
+    properties: { name: JS, id: JS, version: JS, description: JS, type: { type: "string", enum: ["app", "game"] }, thumbnail: JS, code: JS } },
+  face: { type: "object", additionalProperties: false,
+    required: ["name", "id", "version", "description", "tag", "dsl"],
+    properties: { name: JS, id: JS, version: JS, description: JS, tag: { type: "string", enum: ["Digital", "Analog", "Hybrid", "Info", "Unik"] }, dsl: JS } }
+};
+
+const fail = (res, msg) => res.status(502).json({ error: msg });
+
+async function callGemini(res, { mode, guide, messages }) {
+  const key = process.env.API;
+  if (!key) return res.status(500).json({ error: "Environment variable API (Gemini) belum diatur di server." });
+  const contents = messages.map(m => ({ role: m.role === "model" ? "model" : "user", parts: [{ text: String(m.text || "").slice(0, 60000) }] }));
+  const r = await fetch(GEMINI_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: `${SYS[mode]}\n\n=== REFERENCE GUIDE (authoritative) ===\n${guide}` }] },
+      contents,
+      generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA[mode], temperature: 0.4 }
+    })
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) return fail(res, d?.error?.message || `Gemini HTTP ${r.status}`);
+  if (d?.promptFeedback?.blockReason) return fail(res, "Permintaan diblokir AI: " + d.promptFeedback.blockReason);
+  const cand = d?.candidates?.[0];
+  const text = (cand?.content?.parts || []).map(p => p.text || "").join("");
+  if (cand?.finishReason === "MAX_TOKENS") return fail(res, "Respons AI terpotong (melewati batas panjang). Coba permintaan yang lebih ringkas.");
+  if (!text) return fail(res, "Respons AI kosong" + (cand?.finishReason ? ` (${cand.finishReason})` : "") + ". Coba kirim ulang.");
+  return res.status(200).json({ text, provider: "gemini" });
+}
+
+async function callGroq(res, { mode, guide, messages }) {
+  const key = process.env.GROQ_API;
+  if (!key) return res.status(500).json({ error: "Environment variable GROQ_API belum diatur di server." });
+  const chat = [
+    { role: "system", content: `${SYS[mode]}\n\n=== REFERENCE GUIDE (authoritative) ===\n${guide}` },
+    ...messages.map(m => ({ role: m.role === "model" ? "assistant" : "user", content: String(m.text || "").slice(0, 60000) }))
+  ];
+  const r = await fetch(GROQ_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages: chat,
+      temperature: 0.4,
+      reasoning_effort: "medium",      // gpt-oss: low | medium | high
+      max_completion_tokens: 32768,    // sudah termasuk token reasoning
+      response_format: { type: "json_schema", json_schema: { name: `vynwatch_${mode}`, strict: true, schema: JSON_SCHEMA[mode] } }
+    })
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) return fail(res, d?.error?.message || `Groq HTTP ${r.status}`);
+  const ch = d?.choices?.[0];
+  if (ch?.finish_reason === "length") return fail(res, "Respons AI terpotong (melewati batas panjang). Coba permintaan yang lebih ringkas.");
+  const text = ch?.message?.content || "";
+  if (!text) return fail(res, "Respons AI kosong" + (ch?.finish_reason ? ` (${ch.finish_reason})` : "") + ". Coba kirim ulang.");
+  return res.status(200).json({ text, provider: "groq" });
+}
+
+const PROVIDERS = { gemini: callGemini, groq: callGroq };
+
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).json({ error: "Use POST." });
-  const key = process.env.API;
-  if (!key) return res.status(500).json({ error: "Environment variable API belum diatur di server." });
-  const { mode, guide, messages } = req.body || {};
+  const { mode, guide, messages, provider = "gemini" } = req.body || {};
   if (!SYS[mode]) return res.status(400).json({ error: "mode harus 'app' atau 'face'." });
+  if (!PROVIDERS[provider]) return res.status(400).json({ error: "provider harus 'gemini' atau 'groq'." });
   if (typeof guide !== "string" || guide.length > 400000) return res.status(400).json({ error: "Panduan tidak valid atau terlalu besar." });
   if (!Array.isArray(messages) || !messages.length || messages.length > 24) return res.status(400).json({ error: "messages tidak valid." });
-  const contents = messages.map(m => ({ role: m.role === "model" ? "model" : "user", parts: [{ text: String(m.text || "").slice(0, 60000) }] }));
   try {
-    const r = await fetch(URL_, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: `${SYS[mode]}\n\n=== REFERENCE GUIDE (authoritative) ===\n${guide}` }] },
-        contents,
-        generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA[mode], temperature: 0.4 }
-      })
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) return res.status(502).json({ error: d?.error?.message || `Gemini HTTP ${r.status}` });
-    if (d?.promptFeedback?.blockReason) return res.status(502).json({ error: "Permintaan diblokir AI: " + d.promptFeedback.blockReason });
-    const cand = d?.candidates?.[0];
-    const text = (cand?.content?.parts || []).map(p => p.text || "").join("");
-    if (cand?.finishReason === "MAX_TOKENS") return res.status(502).json({ error: "Respons AI terpotong (melewati batas panjang). Coba permintaan yang lebih ringkas." });
-    if (!text) return res.status(502).json({ error: "Respons AI kosong" + (cand?.finishReason ? ` (${cand.finishReason})` : "") + ". Coba kirim ulang." });
-    return res.status(200).json({ text }); // satu JSON utuh: semua field langsung lengkap
+    return await PROVIDERS[provider](res, { mode, guide, messages });
   } catch (e) {
-    return res.status(502).json({ error: "Gagal memanggil AI: " + e.message });
+    return fail(res, "Gagal memanggil AI: " + e.message);
   }
 };
 
