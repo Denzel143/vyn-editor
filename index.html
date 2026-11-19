@@ -1018,6 +1018,25 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
   let appsData = {};
   let facesData = {};
 
+  // ===== Aturan versi: versi baru WAJIB lebih tinggi daripada versi yang sudah ada di RTDB =====
+  const parseVer = s => /^v?\d+(\.\d+)*$/i.test(String(s ?? "").trim()) ? String(s).trim().replace(/^v/i, "").split(".").map(Number) : null;
+  const cmpVer = (a, b) => {
+    const n = Math.max(a.length, b.length);
+    for (let i = 0; i < n; i++) { const d = (a[i] || 0) - (b[i] || 0); if (d) return d < 0 ? -1 : 1; }
+    return 0;
+  };
+  // Mengembalikan pesan masalah bila versi baru tidak boleh diunggah, atau null bila boleh.
+  const versionIssue = (store, id, name, version) => {
+    const existing = Object.prototype.hasOwnProperty.call(store, id) ? store[id] : null;
+    if (!existing || typeof existing !== "object" || existing.name !== name) return null;
+    const oldRaw = String(existing.version ?? "").trim();
+    const oldV = parseVer(oldRaw);
+    if (!oldV) return null; // versi lama kosong / tidak berformat angka: tidak bisa dibandingkan
+    const newV = parseVer(version);
+    if (!newV) return `Versi harus berupa angka dipisah titik (contoh: 1.0.1) agar bisa dibandingkan dengan versi lama ${oldRaw}.`;
+    return cmpVer(newV, oldV) > 0 ? null : `Versi ${version} harus lebih tinggi daripada versi yang sudah ada (${oldRaw}).`;
+  };
+
   const tabs = document.querySelectorAll('.tab');
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
@@ -1101,10 +1120,12 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
   onValue(ref(db, 'apps'), (snapshot) => {
     appsData = snapshot.val() || {};
     renderSidebar();
+    try { validate(); } catch (e) {}
   });
   onValue(ref(db, 'watchfaces'), (snapshot) => {
     facesData = snapshot.val() || {};
     renderSidebar();
+    try { fValidate(); } catch (e) {}
   });
 
   // ===== Verifikator =====
@@ -1831,6 +1852,8 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
     const code = editor.getValue();
     const th = checkThumb($("thumbnail").value);
     const lua = checkLua(code);
+    const vi = versionIssue(appsData, v.id, v.name, v.version);
+    const verNote = vi ? `<li class="bad">✗ ${esc(vi)}</li>` : "";
     const checks = [
       { ok: /^[A-Za-z0-9_-]{1,24}$/.test(v.id), msg: v.id ? "ID: huruf, angka, _ atau -, maksimum 24 karakter." : "ID unik wajib diisi.", good: "ID valid." },
       { ok: ["app", "game"].includes(v.type), msg: "Tipe tidak valid.", good: "Tipe valid." },
@@ -1844,9 +1867,9 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
     editor.session.setAnnotations((lua.diags || []).map(d => ({ row: d.line - 1, column: d.col - 1, text: d.msg, type: d.sev })));
     const extra = (lua.diags || []).filter(d => d !== lua.first).slice(0, 15).map(d =>
       `<li class="${d.sev === "error" ? "bad" : "warn"}">${d.sev === "error" ? "✗" : "⚠"} Baris ${d.line}, kolom ${d.col}: ${esc(d.msg)}</li>`).join("");
-    $("checks").innerHTML = checks.filter((c, i) => !c.ok || i === 6).map(c => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.ok ? c.good : c.msg)}</li>`).join("") + extra;
+    $("checks").innerHTML = checks.filter((c, i) => !c.ok || i === 6).map(c => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.ok ? c.good : c.msg)}</li>`).join("") + verNote + extra;
     const ok = checks.every(c => c.ok);
-    $("upload").disabled = !ok || busy;
+    $("upload").disabled = !ok || !!vi || busy;
     $("aZip").disabled = !ok;
     return { ok, record: ok ? { id: v.id, name: v.name, type: v.type, version: v.version, thumbnail: th.value, description: v.description, code } : null };
   }
@@ -1952,15 +1975,16 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
       const nameMatch = nameMatches[0] || null;
       if (idMatch && idMatch[1] && idMatch[1].name === record.name) {
         const existing = idMatch[1];
+        const vIssue = versionIssue(appsData, record.id, record.name, record.version);
+        if (vIssue) {
+          window.mgToast(vIssue, "bad", 7000);
+          status(vIssue, true);
+          return;
+        }
         const confirmed = await confirmUpdate(
           `"${record.name}" (${record.id}) sudah ada di RTDB. Ganti versi ${existing.version || "tidak diketahui"} dengan ${record.version}?`
         );
         if (!confirmed) return;
-        if (String(existing.version || "") === record.version) {
-          window.mgToast(`Versi "${record.version}" sama dengan versi yang sudah ada. Naikkan versi dulu; isi pekerjaanmu tetap tersimpan.`, "bad", 7000);
-          status("Versi belum berubah.", true);
-          return;
-        }
       } else if (idMatch || nameMatch) {
         const conflicts = new Map();
         if (idMatch) conflicts.set(idMatch[0], idMatch[1]);
@@ -3321,6 +3345,8 @@ function __gc() collect(); collect() end
     const first = an.diags.find(d => d.sev === "error");
     const warns = an.diags.filter(d => d.sev === "warning").length;
     const devName = v.name.replace(/[^A-Za-z0-9 ]/g, "").slice(0, 15);
+    const vi = versionIssue(facesData, v.id, v.name, v.version);
+    const verNote = vi ? `<li class="bad">✗ ${esc(vi)}</li>` : "";
     const checks = [
       { ok: /^[A-Za-z0-9_-]{1,24}$/.test(v.id), msg: v.id ? "ID: huruf, angka, _ atau -, maksimum 24 karakter." : "ID unik wajib diisi.", good: "ID valid." },
       { ok: FACE.TAGS.includes(v.tag), msg: "Kategori tidak valid.", good: "Kategori valid." },
@@ -3334,10 +3360,10 @@ function __gc() collect(); collect() end
     const extra = an.diags.filter(d => d !== first).slice(0, 15).map(d =>
       `<li class="${d.sev === "error" ? "bad" : "warn"}">${d.sev === "error" ? "✗" : "⚠"} Baris ${d.line}, kolom ${d.col}: ${esc(d.msg)}</li>`).join("");
     const nameNote = v.name && devName !== v.name ? `<li class="warn">⚠ Di jam nama dikirim sebagai "${esc(devName)}" (hanya huruf/angka/spasi, maks 15 karakter).</li>` : "";
-    $("fChecks").innerHTML = checks.filter((c, i) => !c.ok || i === 5).map(c => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.ok ? c.good : c.msg)}</li>`).join("") + nameNote + extra;
+    $("fChecks").innerHTML = checks.filter((c, i) => !c.ok || i === 5).map(c => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.ok ? c.good : c.msg)}</li>`).join("") + verNote + nameNote + extra;
     $("fCanon").value = an.canon;
     const ok = checks.every(c => c.ok);
-    $("fUpload").disabled = !ok || fBusy;
+    $("fUpload").disabled = !ok || !!vi || fBusy;
     $("fZip").disabled = !ok;
     return { ok, record: ok ? { id: v.id, name: v.name, tag: v.tag, version: v.version, description: v.description, dsl: an.canon } : null };
   }
@@ -3455,13 +3481,14 @@ function __gc() collect(); collect() end
       const nameMatch = nameMatches[0] || null;
       if (idMatch && idMatch[1] && idMatch[1].name === record.name) {
         const existing = idMatch[1];
-        const confirmed = await confirmUpdate(`Watch face "${record.name}" (${record.id}) sudah ada di RTDB. Ganti versi ${existing.version || "tidak diketahui"} dengan ${record.version}?`);
-        if (!confirmed) return;
-        if (String(existing.version || "") === record.version) {
-          window.mgToast(`Versi "${record.version}" sama dengan versi yang sudah ada. Naikkan versi dulu; isi pekerjaanmu tetap tersimpan.`, "bad", 7000);
-          fStatus("Versi belum berubah.", true);
+        const vIssue = versionIssue(facesData, record.id, record.name, record.version);
+        if (vIssue) {
+          window.mgToast(vIssue, "bad", 7000);
+          fStatus(vIssue, true);
           return;
         }
+        const confirmed = await confirmUpdate(`Watch face "${record.name}" (${record.id}) sudah ada di RTDB. Ganti versi ${existing.version || "tidak diketahui"} dengan ${record.version}?`);
+        if (!confirmed) return;
       } else if (idMatch || nameMatch) {
         const conflicts = new Map();
         if (idMatch) conflicts.set(idMatch[0], idMatch[1]);
