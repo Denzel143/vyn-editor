@@ -852,6 +852,7 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
         <div class="sim-opts">
           <label><input type="checkbox" id="simAuto"> Gerak otomatis sensor</label>
           <label><input type="checkbox" id="simDev" checked> Keluar otomatis seperti perangkat</label>
+          <label>Tema layar <select id="simTheme"><option value="0">Synthwave</option><option value="1">Sunset</option><option value="2">Aurora</option><option value="3">Ocean</option></select></label>
           <label>Jam <select id="simTimeMode"><option value="now">Jam browser</option><option value="manual">Manual</option><option value="none">Belum sinkron</option></select></label>
           <input type="datetime-local" step="1" id="simTimeVal">
         </div>
@@ -2218,11 +2219,104 @@ function __gc() collect(); collect() end
     const c565 = c => { const R = (c >> 19) & 31, G = (c >> 10) & 63, B = (c >> 3) & 31;
       return (0xFF000000 | (((B << 3) | (B >> 2)) << 16) | (((G << 2) | (G >> 4)) << 8) | ((R << 3) | (R >> 2))) >>> 0; };
     let gpen = c565(0xFFFFFF), gOy = TOP, gLim = AH;
-    const BG = new Uint32Array(LW * LH);   // latar: wallpaper gelap (mirip wallpaper redup di perangkat)
-    for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) {
-      const t = y / LH, a = Math.exp(-(((x - 260) ** 2) + ((y - 40) ** 2)) / 14000), b = Math.exp(-(((x - 50) ** 2) + ((y - 210) ** 2)) / 16000);
-      BG[y * LW + x] = c565((Math.min(255, 12 + 20 * t + 70 * a + 10 * b) << 16) | (Math.min(255, 14 + 8 * t + 20 * a + 60 * b) << 8) | Math.min(255, 38 + 12 * t + 60 * a + 70 * b));
-    }
+    // ---------- Wallpaper & palet tema (port lcdGenProc / lcdDeriveWall / lcdPal / lcdLerp / lcdDimC dari INO) ----------
+    const R565 = (r, g, b) => (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xFF) >> 3)) & 0xFFFF;
+    const cl8 = v => { v = Math.trunc(v); return v < 0 ? 0 : v > 255 ? 255 : v; };
+    const rgbI = (r, g, b) => R565(cl8(r), cl8(g), cl8(b));
+    const lerp565 = (a, b, t) => {
+      const ar = (a >> 11) & 31, ag = (a >> 5) & 63, ab = a & 31, br = (b >> 11) & 31, bg = (b >> 5) & 63, bb = b & 31;
+      return ((ar + (((br - ar) * t) >> 8)) << 11) | ((ag + (((bg - ag) * t) >> 8)) << 5) | (ab + (((bb - ab) * t) >> 8));
+    };
+    const dim565 = (c, k) => (((((c >> 11) & 31) * k) >> 8) << 11) | (((((c >> 5) & 63) * k) >> 8) << 5) | (((c & 31) * k) >> 8);
+    const PX565 = new Uint32Array(65536);          // RGB565 -> piksel kanvas (ekspansi bit seperti panel ILI9341)
+    for (let c = 0; c < 65536; c++) { const R = (c >> 11) & 31, G = (c >> 5) & 63, B = c & 31;
+      PX565[c] = (0xFF000000 | (((B << 3) | (B >> 2)) << 16) | (((G << 2) | (G >> 4)) << 8) | ((R << 3) | (R >> 2))) >>> 0; }
+    const PAL = [
+      [R565(0, 229, 255), R565(255, 43, 214), R565(255, 225, 77), R565(61, 255, 162)],
+      [R565(255, 138, 61), R565(255, 61, 129), R565(177, 77, 255), R565(255, 210, 61)],
+      [R565(61, 255, 181), R565(61, 184, 255), R565(138, 91, 255), R565(182, 255, 61)],
+      [R565(92, 242, 255), R565(77, 140, 255), R565(45, 224, 196), R565(200, 244, 255)]];
+    const lhash = (x, y) => {
+      let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0;
+      h = Math.imul((h ^ (h >>> 13)) >>> 0, 1274126177) >>> 0; h = (h ^ (h >>> 16)) >>> 0;
+      return (h & 0xFFFF) / 65535;
+    };
+    const genWall = (th, out) => {
+      for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) {
+        let r = 0, g = 0, b = 0;
+        if (th === 0) {                                  // SYNTHWAVE
+          const hz = 130;
+          if (y < hz) {
+            const t = y / hz; r = 18 + 92 * t * t; g = 4 + 10 * t; b = 46 + 74 * t;
+            const dx = x - 160, dy = y - 96, d = Math.sqrt(dx * dx + dy * dy);
+            if (d < 46) {
+              let s = (y - 50) / 92; if (s < 0) s = 0;
+              const cut = (y > 92) && (((y - 92) % 7) < Math.trunc((y - 90) / 9));
+              if (!cut) { r = 255; g = 230 - 190 * s; b = 60 + 90 * s; }
+            } else if (d < 62) { const k = 1 - (d - 46) / 16; r += 130 * k; b += 50 * k; }
+            if (y < hz - 40 && lhash(x, y) > 0.9985) r = g = b = 255;
+          } else {
+            const d = (y - hz) + 1; let fade = d / 70; if (fade > 1) fade = 1;
+            r = 14; g = 2; b = 36 + 20 * fade;
+            const z = 60 / d, hl = (z * 0.5) % 1, u = Math.abs((x - 160) / (d * 0.55)), vl = (u / 6) % 1;
+            if (hl < 0.07 + d * 0.0006 || vl < 0.05) { r += 255 * fade; g += 40 * fade; b += 200 * fade; }
+            if (d < 6) { r += 90; b += 60; }
+          }
+        } else if (th === 1) {                           // SUNSET
+          const hz = 150;
+          if (y < hz) {
+            const t = y / hz;
+            if (t < 0.45) { const k = t / 0.45; r = 20 + 100 * k; g = 10 + 10 * k; b = 60 + 50 * k; }
+            else if (t < 0.8) { const k = (t - 0.45) / 0.35; r = 120 + 135 * k; g = 20 + 70 * k; b = 110 - 30 * k; }
+            else { const k = (t - 0.8) / 0.2; r = 255; g = 90 + 80 * k; b = 80 - 20 * k; }
+            const dx = x - 160, dy = y - hz, d = Math.sqrt(dx * dx + dy * dy);
+            if (d < 56) { const k = d / 56; r = 255; g = 235 - 110 * k; b = 130 - 50 * k; }
+            else if (d < 80) { const k = 1 - (d - 56) / 24; r += 90 * k; g += 40 * k; }
+            if (y < 70 && lhash(x, y) > 0.998) r = g = b = 255;
+          } else {
+            const t = (y - hz) / (LH - hz); r = 34 - 24 * t; g = 12 - 8 * t; b = 66 - 36 * t;
+            const spread = 52 * (1 - t * 0.7);
+            if (Math.abs(x - 160 + 4 * Math.sin(y * 0.9)) < spread && ((y % 5) < 2)) { r += 230 * (1 - t); g += 110 * (1 - t); b += 30; }
+          }
+        } else if (th === 2) {                           // AURORA
+          const t = y / LH; r = 3 + 3 * t; g = 8 + 16 * t; b = 30 + 22 * t;
+          for (let k = 0; k < 3; k++) {
+            const cy = 64 + k * 30 + 22 * Math.sin(x * 0.021 + k * 1.7 + 0.6 * Math.sin(x * 0.06));
+            const d = (y - cy) / (14 + 4 * k), inten = Math.exp(-d * d) * (0.55 + 0.45 * Math.sin(x * 0.015 + k));
+            if (k === 0) { r += 50 * inten; g += 255 * inten; b += 150 * inten; }
+            else if (k === 1) { r += 50 * inten; g += 180 * inten; b += 255 * inten; }
+            else { r += 170 * inten; g += 80 * inten; b += 255 * inten; }
+          }
+          if (y < 150 && lhash(x, y) > 0.9988) r = g = b = 255;
+          const ridge = 206 - 16 * Math.sin(x * 0.02) - 9 * Math.sin(x * 0.07 + 1);
+          if (y > ridge) { r = 3; g = 5; b = 14; }
+        } else {                                         // OCEAN
+          const t = y / LH;
+          if (t < 0.5) { const k = t / 0.5; r = 8 + 6 * k; g = 60 + 50 * k; b = 120 + 50 * k; }
+          else { const k = (t - 0.5) / 0.5; r = 14 - 10 * k; g = 110 - 86 * k; b = 170 - 110 * k; }
+          let ray = Math.sin(x * 0.045 + y * 0.018) * 0.5 + 0.5; ray *= ray; ray *= (1 - t);
+          r += 60 * ray; g += 110 * ray; b += 120 * ray;
+          const cx = Math.trunc(x / 40), cy = Math.trunc(y / 40), hh = lhash(cx + 31, cy + 17);
+          if (hh > 0.72) {
+            const bx = cx * 40 + 12 + lhash(cx, cy) * 16, by = cy * 40 + 12 + lhash(cy, cx) * 16, rad = 3 + hh * 5;
+            const dx = x - bx, dy = y - by, d = Math.sqrt(dx * dx + dy * dy);
+            if (Math.abs(d - rad) < 0.9) { r += 150; g += 190; b += 200; }
+          }
+        }
+        out[y * LW + x] = rgbI(r, g, b);
+      }
+    };
+    const BG = new Uint32Array(LW * LH);     // = lcdWallEyes (wallpaper x100/256): latar permukaan aplikasi Lua (appFrameBegin)
+    const KBG = new Uint32Array(LW * LH);    // = lcdWallEyes lalu shade 150: latar keyboard layar sentuh (kbOverlayDraw)
+    const LUT = new Uint16Array(256);        // lut warna tema (gradien pelangi 4 warna) untuk keyboard
+    let themeIdx = 0;
+    const setTheme = th => {
+      themeIdx = ((th | 0) % 4 + 4) % 4;
+      const w = new Uint16Array(LW * LH); genWall(themeIdx, w);
+      for (let i = 0; i < LW * LH; i++) { const e = dim565(w[i], 100); BG[i] = PX565[e]; KBG[i] = PX565[dim565(e, 150)]; }
+      const p = PAL[themeIdx]; for (let i = 0; i < 256; i++) { const seg = i >> 6; LUT[i] = lerp565(p[seg], p[(seg + 1) & 3], (i & 63) << 2); }
+    };
+    setTheme(0);
     const gpx = (x, y, c) => { if (x >= 0 && x < LW && y >= 0 && y < gLim) rgbBuf[(y + gOy) * LW + x] = c; };
     const gfill = (x, y, w, h, c) => {
       let x1 = x + w, y1 = y + h; if (x < 0) x = 0; if (y < 0) y = 0; if (x1 > LW) x1 = LW; if (y1 > gLim) y1 = gLim;
@@ -2301,15 +2395,7 @@ function __gc() collect(); collect() end
       gOy = TOP; gLim = AH; gpen = c565(0xFFFFFF);
     };
     const blit = () => octx.putImageData(img, 0, 0);
-    const blitKb = () => {                           // keyboard virtual (kanvas mono 128x64) diskalakan 2,5x di atas latar, berwarna
-      rgbBuf.set(BG);
-      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (fb[y * W + x]) {
-        const c = c565((Math.round(120 + 135 * y / H) << 16) | (230 << 8) | Math.round(255 - 120 * y / H));
-        const x0 = (x * 5) >> 1, x1 = ((x + 1) * 5) >> 1, y0 = 40 + ((y * 5) >> 1), y1 = 40 + (((y + 1) * 5) >> 1);
-        for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) rgbBuf[yy * LW + xx] = c;
-      }
-      blit();
-    };
+    const blitKb = () => blit();   // keyboard digambar langsung 320x240 ke rgbBuf (kbDraw)
 
     // ---------- Data dummy sensor ----------
     // [kunci, label, min, maks, langkah, awal, goyangan-otomatis]
@@ -2376,14 +2462,32 @@ function __gc() collect(); collect() end
     let swDown = false;
     let disp = null, lastAct = 0, swTimer = 0, fN = 0, fMs = 0, fT0 = 0;
     let kbOpen = false, kb = null, kbPend = null;   // keyboard.request sedang terbuka: draw() dan callback input dijeda (seperti firmware)
-    // ---------- Keyboard virtual (meniru layar STATE_KEYBOARD di firmware) ----------
-    // Encoder/swipe = geser karakter atau aksi, klik SW = pilih, tahan SW = pindah baris karakter <-> baris aksi.
-    const KBMAP = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?@-*/+<>'\"()&%#:;=_";
-    const kbEnc = d => {
-      if (!kb) return;
-      if (kb.confirm) { kb.yes = !kb.yes; return; }
-      if (!kb.row) kb.ci = (kb.ci + d + KBMAP.length) % KBMAP.length; else kb.ai = (kb.ai + d + 6) % 6;
+    // ---------- Keyboard layar sentuh (port kbBuild / kbOverlayDraw / kbPressKey / kbTouchEvent dari INO; QWERTY penuh 320x240) ----------
+    // Sentuh = mengetik langsung. Encoder/SW = sorotan tombol (klik pertama hanya memunculkan sorotan). Tahan SW = lompat baris. Layar disentuh = sorotan hilang.
+    const KT = { FIELD: 0, CLEAR: 1, CLOSE: 2, CHAR: 3, SHIFT: 4, BKSP: 5, LAYER: 6, MIC: 7, LEFT: 8, RIGHT: 9, SPACE: 10, SEND: 11 };
+    const KB_CAP = 16, kbLay = [null, null];
+    const kbSpan = (i, n, x0, total) => { const x = x0 + Math.trunc((i * (total + 3)) / n), xn = x0 + Math.trunc(((i + 1) * (total + 3)) / n); return [x, xn - x - 3]; };
+    const kbKeysOf = layer => {
+      if (kbLay[layer]) return kbLay[layer];
+      const ks = [], add = (x, y, w, h, t, row, ch) => ks.push({ x, y, w, h, t, row, ch });
+      add(4, 4, 224, 36, KT.FIELD, 0, ""); add(232, 4, 40, 36, KT.CLEAR, 0, ""); add(276, 4, 40, 36, KT.CLOSE, 0, "");
+      const RY = 46, RH = 35, RP = 38;
+      const rowOf = (s, row, x0, total, y) => { for (let i = 0; i < s.length; i++) { const [x, w] = kbSpan(i, s.length, x0, total); add(x, y, w, RH, KT.CHAR, row, s[i]); } };
+      rowOf("1234567890", 1, 4, 312, RY);
+      rowOf(layer ? "!@#$%^&*()" : "qwertyuiop", 2, 4, 312, RY + RP);
+      if (!layer) rowOf("asdfghjkl", 3, 19, 282, RY + 2 * RP); else rowOf("-_=+[]{}<>", 3, 4, 312, RY + 2 * RP);
+      const y4 = RY + 3 * RP, y5 = RY + 4 * RP;
+      if (!layer) add(4, y4, 42, RH, KT.SHIFT, 4, ""); else add(4, y4, 42, RH, KT.CHAR, 4, "/");
+      rowOf(layer ? ".,?'\":;" : "zxcvbnm", 4, 49, 222, y4);
+      add(274, y4, 42, RH, KT.BKSP, 4, "");
+      add(4, y5, 52, RH, KT.LAYER, 5, ""); add(59, y5, 36, RH, KT.MIC, 5, ""); add(98, y5, 30, RH, KT.LEFT, 5, "");
+      add(131, y5, 93, RH, KT.SPACE, 5, " "); add(227, y5, 30, RH, KT.RIGHT, 5, ""); add(260, y5, 56, RH, KT.SEND, 5, "");
+      return (kbLay[layer] = ks);
     };
+    const kbKs = () => kbKeysOf(kb.layer);
+    const kbCharOf = i => { const c = kbKs()[i].ch; return (kb.layer === 0 && kb.shift && c >= "a" && c <= "z") ? c.toUpperCase() : c; };
+    const kbKeyAt = (x, y) => { const ks = kbKs(); for (let i = 0; i < ks.length; i++) { const k = ks[i]; if (x >= k.x - 1 && x < k.x + k.w + 1 && y >= k.y - 1 && y < k.y + k.h + 1) return i; } return -1; };
+    const kbIdx = () => { const n = kb.text.length; return Math.max(0, Math.min(n, n - kb.cur)); };
     const kbDone = submitted => {
       if (!kb) return;
       const txt = submitted ? kb.text : ""; kb = null; kbOpen = false; touchAct();
@@ -2391,64 +2495,175 @@ function __gc() collect(); collect() end
       say(submitted ? `⌨ on_text("${txt}", true)` : '⌨ on_text("", false) — dibatalkan');
       guard(() => call("on_text", txt, submitted));
     };
-    const kbAdd = c => { if (kb.text.length < kb.max) { kb.text += c; kb.act = performance.now(); } };
+    const kbType = c => {
+      if (kb.text.length < kb.max) { const i = kbIdx(); kb.text = kb.text.slice(0, i) + c + kb.text.slice(i); kb.act = performance.now(); }
+      else beep(800, 60);                                  // kolom penuh
+    };
+    const kbBackspace = () => { const i = kbIdx(); if (i > 0) { kb.text = kb.text.slice(0, i - 1) + kb.text.slice(i); kb.act = performance.now(); } };
+    const kbMoveCursor = d => {                            // d > 0: kursor mundur ke kiri, d < 0: maju ke kanan
+      const n = kb.text.length; if (n === 0) { beep(800, 60); return; }
+      kb.cur = Math.max(0, Math.min(n, kb.cur + d)); kb.act = performance.now();
+    };
+    const kbPress = i => {
+      const ks = kbKs(); if (i < 0 || i >= ks.length) return;
+      const k = ks[i];
+      switch (k.t) {
+        case KT.FIELD: if (kb.text.length > 0) { kb.cmode = true; kb.act = performance.now(); } else beep(800, 60); break;
+        case KT.CLEAR: if (kb.text.length === 0) beep(800, 60); else { kb.confirm = true; kb.yes = false; } break;
+        case KT.CLOSE: kbDone(false); return;
+        case KT.CHAR: kbType(kbCharOf(i)); if (kb && kb.shift === 1) kb.shift = 0; break;
+        case KT.SPACE: kbType(" "); if (kb.shift === 1) kb.shift = 0; break;
+        case KT.SHIFT: { const now = performance.now();
+          if (kb.shift === 0) kb.shift = 1; else if (kb.shift === 1 && now - kb.shiftT < 400) kb.shift = 2; else kb.shift = 0;   // ketuk 2x cepat = caps lock
+          kb.shiftT = now; break; }
+        case KT.BKSP: kbBackspace(); break;
+        case KT.LAYER: kb.layer ^= 1; { const n = kbKs(); for (let j = 0; j < n.length; j++) if (n[j].t === KT.LAYER) { kb.hl = j; break; } } break;
+        case KT.MIC: beep(800, 100); say("Mikrofon (speech-to-text) tidak disimulasikan: butuh Wi-Fi di perangkat."); break;
+        case KT.LEFT: kbMoveCursor(1); break;
+        case KT.RIGHT: kbMoveCursor(-1); break;
+        case KT.SEND: kbDone(true); return;
+      }
+      if (kb) kb.act = performance.now();
+    };
+    const kbEncoderMove = d => {                           // pertama kali hanya memunculkan sorotan, selanjutnya menggeser sorotan
+      const n = kbKs().length;
+      if (!kb.hlOn) { kb.hlOn = true; if (kb.hl < 0 || kb.hl >= n) kb.hl = 13 < n ? 13 : 0; return; }
+      kb.hl = (((kb.hl + d) % n) + n) % n;
+    };
+    const kbJumpRow = () => {                              // tahan SW: sorotan lompat ke tombol pertama baris berikutnya
+      const ks = kbKs();
+      if (!kb.hlOn) { kb.hlOn = true; if (kb.hl < 0 || kb.hl >= ks.length) kb.hl = 13 < ks.length ? 13 : 0; return; }
+      const t = (ks[kb.hl].row + 1) % 6; for (let i = 0; i < ks.length; i++) if (ks[i].row === t) { kb.hl = i; return; }
+    };
+    const kbEnc = d => {
+      if (!kb) return;
+      if (kb.confirm) { kb.yes = !kb.yes; return; }
+      if (kb.cmode) { const n = kb.text.length; if (n === 0) kb.cmode = false; else { kb.cur = Math.max(0, Math.min(n, kb.cur - d)); kb.act = performance.now(); } return; }
+      kbEncoderMove(d);
+    };
     const kbClick = () => {
       if (!kb) return; touchAct();
-      if (kb.confirm) { if (kb.yes) kb.text = ""; kb.confirm = false; kb.yes = false; return; }
-      if (!kb.row) { kbAdd(KBMAP[kb.ci]); return; }
-      switch (kb.ai) {
-        case 0: kbAdd(" "); break;
-        case 1: beep(800, 100); say("Mikrofon (speech-to-text) tidak disimulasikan: butuh Wi-Fi di perangkat."); break;
-        case 2: if (kb.text.length) { kb.text = kb.text.slice(0, -1); kb.act = performance.now(); } break;
-        case 3: kb.confirm = true; kb.yes = false; break;
-        case 4: kbDone(true); break;
-        case 5: kbDone(false); break;
+      if (kb.confirm) { if (kb.yes) { kb.text = ""; kb.cur = 0; kb.scroll = 0; } kb.confirm = false; kb.yes = false; return; }
+      if (kb.cmode) { kb.cmode = false; kb.act = performance.now(); return; }     // klik lagi = selesai menggeser kursor teks
+      if (!kb.hlOn) { kb.hlOn = true; const n = kbKs().length; if (kb.hl < 0 || kb.hl >= n) kb.hl = 13 < n ? 13 : 0; return; }
+      kbPress(kb.hl);                                      // klik SW = tekan tombol yang disorot
+    };
+    const kbToggleRow = () => { if (kb && !kb.confirm) { kb.cmode = false; kbJumpRow(); } };   // tahan SW: keluar mode kursor + lompat baris
+    const kbTouch = (t, x, y) => {                         // t: 0 down, 1 move, 2 up (koordinat layar 320x240)
+      if (!kb) return;
+      if (kb.confirm) {
+        if (t !== 2) return;
+        const yes = x >= 70 && x < 150 && y >= 120 && y < 160, no = x >= 170 && x < 250 && y >= 120 && y < 160;
+        if (yes) { kb.text = ""; kb.cur = 0; kb.scroll = 0; }
+        if (yes || no || x < 50 || x >= 270 || y < 66 || y >= 176) kb.confirm = false;   // ketuk di luar dialog = batal
+        kb.yes = false; return;
+      }
+      if (t === 0) {
+        kb.hlOn = false; kb.cmode = false;                 // layar disentuh -> sorotan encoder hilang
+        kb.down = kbKeyAt(x, y); kb.dragX0 = kb.dragLast = x; kb.dragAcc = 0; kb.dragging = false; kb.repeated = false;
+        kb.dragField = (kb.down === 0); kb.repeatAt = 0;
+        if (kb.down >= 0 && kbKs()[kb.down].t === KT.BKSP) kb.repeatAt = performance.now() + 450;
+      } else if (t === 1) {
+        if (kb.dragField) {                                // seret di kolom teks = geser teks
+          kb.dragAcc += x - kb.dragLast; kb.dragLast = x;
+          if (!kb.dragging && Math.abs(x - kb.dragX0) > 10) kb.dragging = true;
+          if (kb.dragging) {
+            const n = kb.text.length, maxS = Math.max(0, n - KB_CAP + 1);
+            while (kb.dragAcc >= 12) { kb.dragAcc -= 12; if (kb.scroll > 0) kb.scroll--; }
+            while (kb.dragAcc <= -12) { kb.dragAcc += 12; if (kb.scroll < maxS) kb.scroll++; }
+          }
+        } else if (kb.down >= 0 && !kb.repeated) {
+          const k = kbKeyAt(x, y); kb.down = k;            // jari bergeser ke tombol lain: yang dilepas yang dihitung
+          if (k >= 0 && kbKs()[k].t === KT.BKSP && !kb.repeatAt) kb.repeatAt = performance.now() + 450;
+        }
+      } else if (t === 2) {
+        const k = kb.down; kb.down = -1; kb.repeatAt = 0;
+        if (kb.dragField) {
+          if (!kb.dragging) {                              // ketuk kolom teks -> kursor pindah ke karakter yang disentuh
+            const n = kb.text.length; let idx = kb.scroll + Math.trunc((x - (kbKs()[0].x + 14) + 6 + 120) / 12 - 10);
+            idx = Math.max(0, Math.min(n, idx)); kb.cur = n - idx; kb.cmode = false; kb.act = performance.now();
+          }
+          kb.dragField = false; kb.dragging = false;
+        } else if (k >= 0 && !kb.repeated) kbPress(k);
+        if (kb) kb.repeated = false;
       }
     };
-    const kbToggleRow = () => { if (kb && !kb.confirm) { kb.row = !kb.row; if (kb.row) kb.ai = 0; } };
+    const kbTick = () => {                                 // ulang hapus saat BKSP ditahan + jaga kursor tetap terlihat
+      if (!kb) return;
+      const n = kb.text.length;
+      if (n !== kb.lastLen || kb.cur !== kb.lastCur) {
+        kb.lastLen = n; kb.lastCur = kb.cur;
+        if (!kb.dragging) {
+          const c = Math.max(0, Math.min(n, n - kb.cur)), maxS = Math.max(0, n - KB_CAP + 1);
+          if (kb.scroll > maxS) kb.scroll = maxS; if (c < kb.scroll) kb.scroll = c; if (c > kb.scroll + KB_CAP - 1) kb.scroll = c - (KB_CAP - 1); if (kb.scroll < 0) kb.scroll = 0;
+        }
+      }
+      if (kb.down >= 0 && kbKs()[kb.down] && kbKs()[kb.down].t === KT.BKSP && kb.repeatAt && performance.now() >= kb.repeatAt) {
+        kbBackspace(); kb.repeated = true; kb.repeatAt = performance.now() + 70;
+      }
+    };
+    const shade32 = k => {                                 // redupkan seluruh layar lewat RGB565 (lcdDimC)
+      for (let i = 0; i < LW * LH; i++) {
+        const p = rgbBuf[i], r = (p & 255) >> 3, g = ((p >> 8) & 255) >> 2, b = ((p >> 16) & 255) >> 3;
+        rgbBuf[i] = PX565[(((r * k) >> 8) << 11) | (((g * k) >> 8) << 5) | ((b * k) >> 8)];
+      }
+    };
+    const kbCenter = (cx, cy, s, sz, c) => gtext(cx - Math.trunc(s.length * 6 * sz / 2), cy - Math.trunc(8 * sz / 2), s, c, sz);
     const kbDraw = () => {
-      fb.fill(0); pen = 1;
-      const rr = (x, y, w, h) => { hl(x + 2, y, w - 4); hl(x + 2, y + h - 1, w - 4); vl(x, y + 2, h - 4); vl(x + w - 1, y + 2, h - 4); px(x + 1, y + 1); px(x + w - 2, y + 1); px(x + 1, y + h - 2); px(x + w - 2, y + h - 2); };
-      const tri = (a, b, c, d, e, f) => { line(a, b, c, d); line(c, d, e, f); line(e, f, a, b); };
-      // type bar (drawTypeBar(1, 1, 126, 15, ...))
-      const bx = 1, by = 1, bw = 126, bh = 15, tx = bx + 3, ty = by + 4, cap = Math.floor((bw - 6 - 2) / 6), len = kb.text.length;
-      rectP(bx, by, bw, bh, 0); let cells = 0;
-      if (len === 0) { if (kb.prompt) text(tx + 4, ty, kb.prompt.slice(0, Math.floor((bw - 6 - 4) / 6))); }
-      else if (len <= cap) { text(tx, ty, kb.text); cells = len; }
-      else { for (let i = 0; i < 4; i++) vl(tx + i, ty + 3 - i, 2 * i + 1); text(tx + 6, ty, kb.text.slice(len - (cap - 1))); cells = cap; }
-      const now = performance.now();
-      if ((now - kb.act < 600) || (now % 1000 < 500)) rectP(tx + cells * 6, ty - 1, 2, 10, 1);
-      // carousel karakter
-      for (let i = 0; i < 11; i++) {
-        let idx = kb.ci - 5 + i; idx = ((idx % KBMAP.length) + KBMAP.length) % KBMAP.length;
-        if (i === 5 && !kb.row) { rectP(56, 24, 11, 12, 1); pen = 0; text(10 + i * 10, 26, KBMAP[idx]); pen = 1; }
-        else text(10 + i * 10, 26, KBMAP[idx]);
+      gOy = 0; gLim = LH; rgbBuf.set(KBG);
+      const C = v => PX565[v], now = performance.now(), sh = (Math.floor(now / 250) * 4) & 255, GRAY = C(0x7BEF), YEL = C(0xFFE0);
+      const ks = kbKs(), f = ks[0], n = kb.text.length;
+      // ---- kolom teks
+      const focus = kb.cmode || (kb.hlOn && kb.hl === 0);
+      grrect(f.x, f.y, f.w, f.h, 8, true, C(0x0841));
+      grrect(f.x, f.y, f.w, f.h, 8, false, C(LUT[(sh + 200) & 255]));
+      if (focus) { grrect(f.x + 1, f.y + 1, f.w - 2, f.h - 2, 7, false, YEL); grrect(f.x + 2, f.y + 2, f.w - 4, f.h - 4, 6, false, YEL); }
+      const cur = Math.max(0, Math.min(n, n - kb.cur)), sc = Math.max(0, Math.min(n, kb.scroll)), tx = f.x + 14, ty = f.y + 10;
+      if (n === 0) gtext(tx, ty, (kb.prompt || "").slice(0, KB_CAP), GRAY, 2);
+      else {
+        gtext(tx, ty, kb.text.slice(sc, sc + KB_CAP), C(0xFFFF), 2);
+        if (sc > 0) gtri(f.x + 9, f.y + 18, f.x + 4, f.y + 14, f.x + 9, f.y + 22, GRAY, true);
+        if (sc + KB_CAP < n) gtri(f.x + f.w - 9, f.y + 18, f.x + f.w - 4, f.y + 14, f.x + f.w - 9, f.y + 22, GRAY, true);
       }
-      // baris aksi: spasi, mikrofon (dicoret = offline), hapus, bersihkan, kirim, tutup
-      const cx = [11, 32, 54, 76, 98, 118], y = 52;
-      for (let n = 0; n < 6; n++) {
-        const x = cx[n], sel = kb.row && kb.ai === n;
-        if (sel) rectP(x - 10, y - 9, 20, 18, 1);
-        const c = sel ? 0 : 1; pen = c;
-        if (n === 1) {
-          rr(x - 2, y - 7, 5, 10); line(x - 5, y - 2, x - 5, y + 1); line(x + 5, y - 2, x + 5, y + 1);
-          line(x - 5, y + 1, x - 3, y + 4); line(x + 5, y + 1, x + 3, y + 4); line(x - 3, y + 4, x + 3, y + 4);
-          line(x, y + 4, x, y + 7); line(x - 3, y + 7, x + 3, y + 7);
-          pen = 1 - c; line(x - 10, y - 8, x + 7, y + 8); line(x - 8, y - 8, x + 9, y + 8); pen = c; line(x - 9, y - 8, x + 8, y + 8);
-        } else if (n === 0) { line(x - 6, y + 3, x + 6, y + 3); line(x - 6, y + 1, x - 6, y + 3); line(x + 6, y + 1, x + 6, y + 3); }
-        else if (n === 2) { tri(x - 6, y, x - 2, y - 4, x - 2, y + 4); rectP(x - 2, y - 2, 7, 5, 1); }
-        else if (n === 3) { rectP(x - 4, y - 2, 8, 7, 0); line(x - 5, y - 3, x + 5, y - 3); line(x - 2, y - 5, x + 2, y - 5); }
-        else if (n === 4) { tri(x - 5, y + 4, x - 3, y - 4, x + 6, y); line(x - 3, y - 4, x, y + 1); }
-        else { line(x - 4, y - 4, x + 4, y + 4); line(x + 4, y - 4, x - 4, y + 4); }
-        pen = 1;
+      if ((now - kb.act < 600) || (now % 1000 < 500)) gfill(tx + (cur - sc) * 12 - 1, f.y + 7, 2, 22, YEL);
+      // ---- tombol
+      for (let i = 1; i < ks.length; i++) {
+        const k = ks[i], pr = kb.down === i, hl = kb.hlOn && kb.hl === i, shiftOn = k.t === KT.SHIFT && kb.shift > 0, lit = pr || hl || shiftOn;
+        const base = LUT[(sh + i * 11) & 255], plain = k.t === KT.CHAR || k.t === KT.SPACE;
+        const bgc = lit ? base : dim565(base, plain ? 50 : 95), ic = C(lit ? 0x0000 : 0xFFFF), cx = k.x + (k.w >> 1), cy = k.y + (k.h >> 1);
+        grrect(k.x, k.y, k.w, k.h, 6, true, C(bgc)); grrect(k.x, k.y, k.w, k.h, 6, false, C(base));
+        if (hl) { grrect(k.x - 1, k.y - 1, k.w + 2, k.h + 2, 7, false, YEL); grrect(k.x - 2, k.y - 2, k.w + 4, k.h + 4, 8, false, YEL); grrect(k.x - 3, k.y - 3, k.w + 6, k.h + 6, 9, false, YEL); }
+        switch (k.t) {
+          case KT.CHAR: kbCenter(cx, cy, kbCharOf(i), 2, ic); break;
+          case KT.CLEAR: kbCenter(cx, cy, "CLR", 2, ic); break;
+          case KT.CLOSE: for (let d = -1; d <= 1; d++) { gline(cx - 8, cy - 8 + d, cx + 8, cy + 8 + d, ic); gline(cx - 8, cy + 8 + d, cx + 8, cy - 8 + d, ic); } break;
+          case KT.SHIFT:
+            gtri(cx, cy - 10, cx - 10, cy + 1, cx + 10, cy + 1, ic, true); gfill(cx - 4, cy + 1, 9, 8, ic);
+            if (kb.shift === 2) gfill(cx - 9, cy + 12, 19, 2, ic); break;
+          case KT.BKSP:
+            gtri(cx - 14, cy, cx - 5, cy - 9, cx - 5, cy + 9, ic, true); gfill(cx - 5, cy - 9, 18, 19, ic);
+            for (let d = -1; d <= 0; d++) { gline(cx - 1, cy - 4 + d, cx + 7, cy + 4 + d, C(bgc)); gline(cx - 1, cy + 4 + d, cx + 7, cy - 4 + d, C(bgc)); } break;
+          case KT.LAYER: kbCenter(cx, cy, kb.layer ? "ABC" : "?123", 2, ic); break;
+          case KT.MIC:
+            grrect(cx - 4, cy - 12, 9, 15, 4, true, ic); gvl(cx - 8, cy - 4, 6, ic); gvl(cx + 8, cy - 4, 6, ic);
+            gline(cx - 8, cy + 2, cx - 4, cy + 7, ic); gline(cx + 8, cy + 2, cx + 4, cy + 7, ic);
+            ghl(cx - 4, cy + 7, 9, ic); gvl(cx, cy + 7, 4, ic); ghl(cx - 5, cy + 11, 11, ic); break;   // Wi-Fi dianggap tersambung (tanpa coretan)
+          case KT.LEFT: gtri(cx + 6, cy - 9, cx + 6, cy + 9, cx - 7, cy, ic, true); break;
+          case KT.RIGHT: gtri(cx - 6, cy - 9, cx - 6, cy + 9, cx + 7, cy, ic, true); break;
+          case KT.SPACE: ghl(cx - 30, cy + 4, 61, ic); gvl(cx - 30, cy - 3, 8, ic); gvl(cx + 30, cy - 3, 8, ic); break;
+          case KT.SEND: kbCenter(cx, cy, "OK", 2, ic); break;
+        }
       }
-      if (kb.confirm) {   // dialog "Clear Text?"
-        rectP(14, 12, 100, 40, 1); pen = 0; rectP(15, 13, 98, 38, 1); pen = 1; rectP(14, 12, 100, 40, 0);
-        text(22, 16, "Clear Text?");
-        if (kb.yes) { rectP(20, 30, 30, 14, 1); pen = 0; } else rectP(20, 30, 30, 14, 0);
-        text(26, 33, "Yes"); pen = 1;
-        if (!kb.yes) { rectP(78, 30, 24, 14, 1); pen = 0; } else rectP(78, 30, 24, 14, 0);
-        text(82, 33, "No"); pen = 1;
+      // ---- dialog "Clear text?"
+      if (kb.confirm) {
+        shade32(110);
+        grrect(50, 66, 220, 110, 10, true, C(0x0000)); grrect(50, 66, 220, 110, 10, false, C(LUT[(sh + 40) & 255]));
+        kbCenter(160, 92, "Clear text?", 2, C(0xFFFF));
+        for (let b = 0; b < 2; b++) {
+          const bx = b === 0 ? 70 : 170, sel = b === 0 ? kb.yes : !kb.yes, c = C(LUT[(sh + 100 + b * 80) & 255]);
+          if (sel) grrect(bx, 120, 80, 40, 8, true, c); else grrect(bx, 120, 80, 40, 8, false, c);
+          kbCenter(bx + 40, 140, b === 0 ? "Yes" : "No", 2, C(sel ? 0x0000 : 0xFFFF));
+        }
       }
     };
     // Tiap panggilan JS -> Lua (draw, on_*) meninggalkan ±1-2 KB sampah (thread wasmoon + tabel broker) yang tidak ada di firmware.
@@ -2598,6 +2813,7 @@ function __gc() collect(); collect() end
       if (!running || P.id !== null) return;
       const p = opos(e); P.id = e.pointerId; oled.setPointerCapture(e.pointerId); touchAct();
       P.sx = p.x; P.sy = p.y; P.anchor = p.y; P.t = performance.now(); P.moved = P.swiped = P.hold = false;
+      if (kbOpen) { P.mode = "kb"; P.lx = p.x; P.ly = p.y; kbTouch(0, p.x, p.y); return; }   // keyboard: sentuhan mentah (lcdRawOnly)
       if (!kbOpen && p.y < TOP) { P.mode = "title"; return; }
       if (!kbOpen && ptrMode()) { P.mode = "ptr"; ptrDownApp = true; ptrX = p.x; ptrY = Math.max(0, p.y - TOP); guard(() => call("on_pointer", "down", ptrX, ptrY)); return; }
       P.mode = "legacy";
@@ -2606,6 +2822,7 @@ function __gc() collect(); collect() end
     oled.addEventListener("pointermove", e => {
       if (e.pointerId !== P.id) return;
       const p = opos(e); touchAct();
+      if (P.mode === "kb") { if (Math.abs(p.x - P.lx) >= 2 || Math.abs(p.y - P.ly) >= 2) { P.lx = p.x; P.ly = p.y; kbTouch(1, p.x, p.y); } return; }
       if (P.mode === "ptr") { const y = Math.max(0, p.y - TOP); if (p.x !== ptrX || y !== ptrY) { ptrX = p.x; ptrY = y; guard(() => call("on_pointer", "move", ptrX, ptrY)); } return; }
       if (P.mode !== "legacy") return;
       const dx = p.x - P.sx, dy = p.y - P.sy;
@@ -2620,6 +2837,7 @@ function __gc() collect(); collect() end
       if (e.pointerId !== P.id) return;
       const mode = P.mode, dur = performance.now() - P.t; clearTimeout(P.holdT); P.id = null; P.mode = "";
       if (mode === "title") { if (P.sx >= 268 && running) { say("Bar judul: tombol tutup (setara tahan SW): program ditutup."); stop(); } }
+      else if (mode === "kb") { const q = opos(e); kbTouch(2, q.x, q.y); }
       else if (mode === "ptr") { ptrDownApp = false; guard(() => call("on_pointer", "up", ptrX, ptrY)); }
       else if (mode === "legacy") {
         if (P.hold) setSw(false);
@@ -2733,7 +2951,7 @@ function __gc() collect(); collect() end
         if (mx < 1 || mx > 100) throw argErr("keyboard.request", 3, "max_len must be 1..100");
         if (kbOpen || kbPend) return false;
         const ascii = v => v.replace(/[^\x20-\x7E]/g, "");
-        kb = { prompt: ascii(p).slice(0, 15), text: ascii(ini).slice(0, mx), max: mx, ci: 0, row: false, ai: 0, confirm: false, yes: false, act: performance.now(), swIgnore: swDown, long: false };
+        kb = { prompt: ascii(p).slice(0, 15), text: ascii(ini).slice(0, mx), max: mx, layer: 0, shift: 0, hl: 13, hlOn: false, down: -1, scroll: 0, cur: 0, cmode: false, confirm: false, yes: false, act: performance.now(), swIgnore: swDown, long: false, shiftT: 0, dragField: false, dragging: false, repeated: false, repeatAt: 0, dragX0: 0, dragLast: 0, dragAcc: 0, lastLen: -1, lastCur: -1 };
         if (swDown) { kbPend = kb; kb = null; say(`⌨ keyboard.request("${kbPend.prompt}") dari penekanan SW: menunggu SW dilepas (tahan lama = keluar program).`); return true; }
         kbOpen = true; say(`⌨ keyboard.request("${kb.prompt}", max ${mx}) — keyboard virtual terbuka.`);
         return true;
@@ -2866,7 +3084,7 @@ function __gc() collect(); collect() end
       raf = requestAnimationFrame(frame);
       if (ts - lastF < 33) return;
       lastF = ts;
-      if (kbOpen) { kbDraw(); blitKb(); return; }   // keyboard terbuka: layar program dijeda, tampilkan keyboard virtual
+      if (kbOpen) { kbTick(); if (!kb) return; kbDraw(); blitKb(); return; }   // keyboard terbuka: layar program dijeda, tampilkan keyboard virtual
       appBegin();   // appLuaDraw(): latar + bar judul sistem, lalu draw()
       if ($("simDev").checked && ts - lastAct > 120000) { say("Tidak ada interaksi 120 dtk: program ditutup (panggil app.keep_alive() agar tetap berjalan)."); stop(); return; }
       const t1 = performance.now();
@@ -2897,6 +3115,7 @@ function __gc() collect(); collect() end
     document.addEventListener("keydown", e => { if (isOpen && e.key === "Escape") { e.preventDefault(); closeSim(); } });
     window.addEventListener("resize", () => { if (isOpen) sizeStrip(); });
     window.addEventListener("orientationchange", () => setTimeout(() => { if (isOpen) sizeStrip(); }, 200));
+    $("simTheme").addEventListener("change", () => { setTheme(+$("simTheme").value); if (!running) { rgbBuf.set(BG); blit(); } });
     $("simRun").addEventListener("click", run);
     $("simStop").addEventListener("click", () => { stop(); say("■ Dihentikan."); });
     $("simReset").addEventListener("click", () => { editor.setValue(DEFAULT_CODE, -1); });
