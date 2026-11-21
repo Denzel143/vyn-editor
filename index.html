@@ -2459,7 +2459,7 @@ function __gc() collect(); collect() end
     // ---------- Input hardware ----------
     let eng = null, running = false, raf = 0, lastF = 0, t0 = 0, keeps = 0;
     const padDown = [false, false, false, false];
-    let swDown = false;
+    let swDown = false, swOwned = false, swPressRun = false;
     let disp = null, lastAct = 0, swTimer = 0, fN = 0, fMs = 0, fT0 = 0;
     let kbOpen = false, kb = null, kbPend = null;   // keyboard.request sedang terbuka: draw() dan callback input dijeda (seperti firmware)
     // ---------- Keyboard layar sentuh (port kbBuild / kbOverlayDraw / kbPressKey / kbTouchEvent dari INO; QWERTY penuh 320x240) ----------
@@ -2710,9 +2710,12 @@ function __gc() collect(); collect() end
         else if (!kb.long) kbClick();
         return;
       }
-      guard(() => call("on_sw", down));
+      // Seperti firmware: on_sw(true) ditunda ±500 ms (pembeda screenshot). Dilepas sebelum itu = klik: true lalu false berurutan saat dilepas.
+      // Ditahan >= 500 ms = on_sw(true) saat itu, on_sw(false) saat dilepas. Tahan SW TIDAK lagi keluar dari program (milik aplikasi).
+      if (down) { swPressRun = running; swOwned = false; swTimer = setTimeout(() => { if (swDown && running && !kbOpen) { swOwned = true; guard(() => call("on_sw", true)); } }, 500); }
+      else if (swOwned) { swOwned = false; guard(() => call("on_sw", false)); }
+      else if (swPressRun && running) { guard(() => call("on_sw", true)); if (running) guard(() => call("on_sw", false)); }
       if (!down && kbPend && running) { kb = kbPend; kbPend = null; kb.swIgnore = false; kbOpen = true; touchAct(); say("⌨ SW dilepas: keyboard virtual terbuka."); return; }
-      if (down && running && $("simDev").checked) swTimer = setTimeout(() => { if (swDown && running && !kbOpen) { say("SW ditahan ≥ 500 ms: keluar dari program (seperti perangkat)."); stop(); } }, 500);
     };
 
     // Pad touch: kanvas putih, 4 garis = elektroda; jari berukuran nyata (lingkaran), jejak saat digeser
@@ -2803,7 +2806,7 @@ function __gc() collect(); collect() end
     // ---------- Layar sentuh LCD (klik/seret/jari pada kanvas) ----------
     // Aplikasi yang mendefinisikan on_pointer atau memanggil input.touch/input.pointer mendapat koordinat sentuhan mentah (area aplikasi 320x216).
     // Aplikasi lain: ketuk = klik SW, tahan = tahan SW, seret vertikal = putar encoder, usap horizontal = on_swipe (sama seperti firmware).
-    // Bar judul (24 px teratas): ketuk tombol x di kanan = tutup program (setara tahan SW).
+    // Bar judul (24 px teratas): ketuk tombol x di kanan = tutup program (di perangkat membuka dialog Suspend/Close); tahan SW milik aplikasi.
     let hasPtrCb = false, ptrReq = -1e9, ptrDownApp = false, ptrX = 0, ptrY = 0;
     const P = { id: null, mode: "", sx: 0, sy: 0, t: 0, moved: false, swiped: false, hold: false, anchor: 0, holdT: 0 };
     const ptrMode = () => hasPtrCb || performance.now() - ptrReq < 1500;
@@ -2836,7 +2839,7 @@ function __gc() collect(); collect() end
     const endPtr = e => {
       if (e.pointerId !== P.id) return;
       const mode = P.mode, dur = performance.now() - P.t; clearTimeout(P.holdT); P.id = null; P.mode = "";
-      if (mode === "title") { if (P.sx >= 268 && running) { say("Bar judul: tombol tutup (setara tahan SW): program ditutup."); stop(); } }
+      if (mode === "title") { if (P.sx >= 268 && running) { say("Bar judul: tombol tutup (x): program ditutup (di perangkat membuka dialog Suspend/Close)."); stop(); } }
       else if (mode === "kb") { const q = opos(e); kbTouch(2, q.x, q.y); }
       else if (mode === "ptr") { ptrDownApp = false; guard(() => call("on_pointer", "up", ptrX, ptrY)); }
       else if (mode === "legacy") {
@@ -2952,7 +2955,7 @@ function __gc() collect(); collect() end
         if (kbOpen || kbPend) return false;
         const ascii = v => v.replace(/[^\x20-\x7E]/g, "");
         kb = { prompt: ascii(p).slice(0, 15), text: ascii(ini).slice(0, mx), max: mx, layer: 0, shift: 0, hl: 13, hlOn: false, down: -1, scroll: 0, cur: 0, cmode: false, confirm: false, yes: false, act: performance.now(), swIgnore: swDown, long: false, shiftT: 0, dragField: false, dragging: false, repeated: false, repeatAt: 0, dragX0: 0, dragLast: 0, dragAcc: 0, lastLen: -1, lastCur: -1 };
-        if (swDown) { kbPend = kb; kb = null; say(`⌨ keyboard.request("${kbPend.prompt}") dari penekanan SW: menunggu SW dilepas (tahan lama = keluar program).`); return true; }
+        if (swDown) { kbPend = kb; kb = null; say(`⌨ keyboard.request("${kbPend.prompt}") dari penekanan SW: menunggu SW dilepas.`); return true; }
         kbOpen = true; say(`⌨ keyboard.request("${kb.prompt}", max ${mx}) — keyboard virtual terbuka.`);
         return true;
       },
