@@ -1,6 +1,6 @@
 # Panduan Lua untuk Aplikasi VynWatch
 
-Program Apps dan Games yang diunduh dijalankan di firmware ESP32 menggunakan Lua 5.4. Ini Lua yang dibatasi agar sesuai dengan VynWatch, bukan akses Lua penuh ke perangkat. Seluruh akses perangkat melewati Device API berlapis (lihat [Arsitektur tiga lapisan dan Device API](#arsitektur-tiga-lapisan-dan-device-api)). Program dapat menggambar pada OLED, membaca input perangkat, membaca sensor gerak, baterai, suhu chip, dan waktu, mengontrol LED RGB, membaca tingkat suara mikrofon, meminta pengguna mengetik teks lewat keyboard virtual, mengeluarkan bunyi buzzer, menyimpan state sementara maupun data persisten per aplikasi/game di NVS, dan menangani callback input.
+Program Apps dan Games yang diunduh dijalankan di firmware ESP32 menggunakan Lua 5.4. Ini Lua yang dibatasi agar sesuai dengan VynWatch, bukan akses Lua penuh ke perangkat. Seluruh akses perangkat melewati Device API berlapis (lihat [Arsitektur tiga lapisan dan Device API](#arsitektur-tiga-lapisan-dan-device-api)). Program dapat menggambar berwarna pada layar LCD 320×216, membaca input perangkat (pad, SW, encoder, dan layar sentuh dengan koordinat real-time), membaca sensor gerak, baterai, suhu chip, dan waktu, mengontrol LED RGB, membaca tingkat suara mikrofon, meminta pengguna mengetik teks lewat keyboard virtual, mengeluarkan bunyi buzzer, menyimpan state sementara maupun data persisten per aplikasi/game di NVS, dan menangani callback input.
 
 ## Membuat paket aplikasi/game
 
@@ -41,9 +41,11 @@ Firmware menjalankan chunk Lua satu kali ketika aplikasi dibuka. Deklarasikan st
 local count = 0
 
 function draw()
-  screen.text(4, 18, app.name)
-  screen.line(4, 23, 124, 23)
-  screen.text(4, 36, "Count: " .. count)
+  local w = screen.width()
+  screen.gradient(0, 0, w, 60, screen.rgb(30, 60, 160), screen.rgb(120, 30, 150))
+  screen.text(12, 12, app.name, screen.rgb(255, 255, 255), 2)
+  screen.fill_round_rect(12, 80, 160, 44, 12, screen.hsv(170, 85, 95))
+  screen.text(26, 94, "Count: " .. count, 0x101010, 2)
 end
 
 function on_touch(pad, touched)
@@ -97,11 +99,11 @@ Kategori API:
 
 | Kategori | Isi | Cara akses |
 |---|---|---|
-| Data hardware (baca) | gerak, baterai, suhu, waktu, tingkat suara, status pad/SW, uptime | `vyn.request` |
+| Data hardware (baca) | gerak, baterai, suhu, waktu, tingkat suara, status pad/SW, koordinat sentuhan layar, uptime | `vyn.request` |
 | Aktuator (perintah) | LED RGB, buzzer | `vyn.request` dengan params |
-| Event input | `on_touch`, `on_sw`, `on_swipe`, `on_encoder`, `on_text` | callback (format sudah kanonik) |
+| Event input | `on_touch`, `on_sw`, `on_swipe`, `on_encoder`, `on_text`, `on_pointer` | callback (format sudah kanonik) |
 | Layanan platform | `storage`, `keyboard.request`, `app.keep_alive`, metadata `app` | tabel masing-masing; bukan data hardware |
-| Permukaan gambar | `screen.*` (kanvas monokrom tetap 128x64) | tabel `screen`; ukuran juga ada di `device.info` |
+| Permukaan gambar | `screen.*` (kanvas berwarna 320×216, RGB) | tabel `screen`; ukuran juga ada di `device.info` |
 
 ### `vyn.request(resource [, params])`
 
@@ -127,13 +129,13 @@ Satu bentuk request untuk semua data perangkat. Hasilnya selalu tabel envelope y
 
 Fungsi pendukung: `vyn.has(resource)` (boolean, ada provider atau tidak), `vyn.list()` (array nama resource yang didukung perangkat ini), `vyn.version` (versi API, saat ini `1`).
 
-### Daftar resource v1
+### Daftar resource v2
 
 Resource baca (tanpa parameter kecuali disebut):
 
 | Resource | Field `data` | Satuan dan rentang | Pembungkus lama |
 |---|---|---|---|
-| `device.info` | `api`, `display_w`, `display_h`, `pads` | integer | - |
+| `device.info` | `api` (2), `display_w` (320), `display_h` (216), `pads`, `color` (boolean), `touch` (boolean) | integer / boolean; ukuran = area gambar aplikasi | - |
 | `system.uptime` | `ms` | ms sejak boot | `input.millis()` |
 | `system.time` | `weekday` (1=Sen..7=Min), `day`, `month`, `year`, `hour`, `minute`, `second` | integer; `not_ready` bila jam belum sinkron | `device.time()` |
 | `system.temperature` | `celsius` | float, -50..200 | `device.temperature()` |
@@ -143,6 +145,7 @@ Resource baca (tanpa parameter kecuali disebut):
 | `audio.level` | `level` | integer 0..100, skala relatif; `busy` bila mikrofon dipakai perekam suara | `mic.level()` |
 | `input.pad` (param `pad` 1..4, wajib) | `down` | boolean | `input.touch(pad)` |
 | `input.switch` | `down` | boolean | `input.sw()` |
+| `input.touch` | `down`, `x`, `y` | `down` boolean; `x` 0..319, `y` 0..215 piksel area aplikasi; setelah jari diangkat `x`,`y` tetap di posisi terakhir | `input.pointer()` |
 
 Resource perintah (tanpa `data`; sukses = `ok = true`):
 
@@ -177,30 +180,47 @@ Menambah resource baru berarti: (1) tambah entri di tabel skema `src/vyn_api.cpp
 
 ## API perangkat
 
-### Layar OLED
+### Layar LCD berwarna (RGB)
 
-Resolusi layar adalah 128×64 piksel. Area y=0..10 dipakai judul aplikasi dan garis header firmware; gambar aplikasi sebaiknya menggunakan y=12..63. Koordinat dan ukuran dibatasi firmware ke area layar.
+Layar adalah LCD ILI9341 240×320 yang dipakai landscape (320×240). **Baris 0..23 adalah bar judul sistem** (nama aplikasi dan tombol tutup ✕); area milik aplikasi adalah **320×216 piksel** dengan titik (0, 0) di kiri atas area itu, sehingga `screen.width()` = `320` dan `screen.height()` = `216`. Latar awal setiap frame adalah wallpaper gelap perangkat, jadi gambar hanya yang perlu; panggil `screen.clear(warna)` bila ingin latar polos.
+
+**Warna** adalah bilangan bulat `0xRRGGBB` (hex `0x00E5FF`, atau dari `screen.rgb(r, g, b)` / `screen.hsv(h, s, v)`). Setiap fungsi gambar menerima **warna opsional sebagai argumen terakhir**; bila dihilangkan dipakai *warna pena* (`screen.color(c)`, default putih di awal tiap `draw()`). Panel menyimpan RGB565, jadi warna dikuantisasi (5-6-5 bit).
 
 | Fungsi | Penggunaan |
 |---|---|
-| `screen.text(x, y, text)` | Menulis teks putih, maksimal 120 byte ASCII. Byte non-ASCII diabaikan. |
-| `screen.line(x1, y1, x2, y2)` | Menggambar garis putih. |
-| `screen.rect(x, y, width, height)` | Menggambar persegi panjang tanpa isi. |
-| `screen.fill_rect(x, y, width, height)` | Menggambar persegi panjang terisi. |
-| `screen.circle(x, y, radius)` | Menggambar lingkaran tanpa isi. |
-| `screen.fill_circle(x, y, radius)` | Menggambar lingkaran terisi. |
-| `screen.width()` | Menghasilkan `128`. |
-| `screen.height()` | Menghasilkan `64`. |
+| `screen.width()` / `screen.height()` | `320` / `216`. |
+| `screen.rgb(r, g, b)` | Warna dari komponen 0..255 (di luar rentang dijepit). Menghasilkan `0xRRGGBB`. |
+| `screen.hsv(h, s, v)` | Warna dari hue 0..359, saturasi 0..100, nilai 0..100. |
+| `screen.color(c)` | Mengatur warna pena untuk panggilan berikutnya (sampai akhir `draw()` ini). |
+| `screen.clear([c])` | Mengisi seluruh area aplikasi dengan `c` (default hitam). |
+| `screen.pixel(x, y [, c])` | Satu piksel. |
+| `screen.line(x1, y1, x2, y2 [, c])` | Garis. |
+| `screen.rect(x, y, w, h [, c])` / `screen.fill_rect(...)` | Persegi panjang tanpa isi / terisi. |
+| `screen.round_rect(x, y, w, h, r [, c])` / `screen.fill_round_rect(...)` | Persegi panjang sudut membulat (radius `r`, dijepit ke setengah sisi terpendek). |
+| `screen.circle(x, y, r [, c])` / `screen.fill_circle(...)` | Lingkaran tanpa isi / terisi (`r` maks 400). |
+| `screen.triangle(x1, y1, x2, y2, x3, y3 [, c])` / `screen.fill_triangle(...)` | Segitiga tanpa isi / terisi. |
+| `screen.gradient(x, y, w, h, c1, c2 [, vertikal])` | Persegi panjang gradien linear dari `c1` ke `c2`; `vertikal` default `true` (atas ke bawah), `false` = kiri ke kanan. |
+| `screen.text(x, y, teks [, c [, ukuran]])` | Teks ASCII (maks 120 byte; non-ASCII diabaikan), font 6×8 piksel dikali `ukuran` 1..4 (default 1). Tanpa pembungkusan baris. |
+| `screen.text_width(teks [, ukuran])` | Lebar teks dalam piksel (`jumlah karakter × 6 × ukuran`); tinggi huruf `8 × ukuran`. |
+
+Koordinat dijepit ke ±2000 dan gambar dipotong di tepi area aplikasi (tidak pernah menimpa bar judul). Warna di luar `0..0xFFFFFF` atau bukan bilangan bulat menghentikan aplikasi (`color must be 0..0xFFFFFF`). Semua koordinat/ukuran adalah bilangan bulat, kecuali argumen `screen.hsv` yang boleh pecahan.
 
 Contoh:
 
 ```lua
-screen.rect(8, 24, 112, 28)
-screen.fill_circle(64, 38, 5)
-screen.text(14, 58, "OLED 128x64")
+function draw()
+  local w = screen.width()
+  screen.gradient(0, 0, w, screen.height(), screen.rgb(10, 20, 60), screen.rgb(70, 20, 90))
+  screen.fill_round_rect(20, 20, 200, 70, 14, screen.hsv(190, 80, 90))
+  screen.text(34, 36, "Halo LCD", 0xFFFFFF, 3)
+  screen.circle(260, 60, 30, 0xFFE14D)
+  screen.fill_triangle(40, 180, 100, 120, 160, 180, 0x3DFFA2)
+end
 ```
 
-Semua operasi gambar berwarna putih. Tidak ada buffer gambar pribadi atau akses piksel arbitrer dari Lua.
+Tidak ada buffer gambar pribadi, gambar bitmap, atau akses piksel baca dari Lua; semua gambar langsung ke layar pada frame berjalan. Aplikasi lama yang menggambar untuk 128×64 tetap berjalan, tetapi hanya mengisi pojok kiri atas; gunakan `screen.width()`/`screen.height()` dan skala koordinatnya (lihat catatan migrasi di bawah).
+
+**Catatan migrasi dari OLED 128×64 (Device API v1):** (1) ukuran 128×64 → 320×216 dan header OLED (y=0..10) diganti bar judul sistem, jadi tidak ada lagi batas `y = 12..63`; (2) semua gambar sebelumnya putih, sekarang warna pena default putih sehingga hasilnya sama sampai Anda memberi warna; (3) `device.info` mengembalikan `api = 2`, `display_w = 320`, `display_h = 216`, ditambah `color` dan `touch`; (4) fungsi lama (`text`, `line`, `rect`, `fill_rect`, `circle`, `fill_circle`) tetap ada dengan argumen yang sama.
 
 ### Input
 
@@ -209,6 +229,7 @@ Semua operasi gambar berwarna putih. Tidak ada buffer gambar pribadi atau akses 
 | `input.touch(pad)` | Status sentuh pad, dengan `pad` bernilai 1 sampai 4. |
 | `input.sw()` | `true` selama sakelar SW rotary encoder tertekan. |
 | `input.millis()` | Waktu perangkat dalam milidetik (`millis()` Arduino). |
+| `input.pointer()` | Sentuhan layar real-time: `down, x, y` (boolean dan koordinat piksel area aplikasi, `x` 0..319, `y` 0..215), atau `nil` bila perangkat tanpa layar sentuh. Setara `vyn.request("input.touch")`. |
 
 Callback input bersifat opsional:
 
@@ -218,9 +239,43 @@ Callback input bersifat opsional:
 | `on_sw(pressed)` | Boolean | Dipanggil saat SW ditekan (`true`) dan dilepas (`false`) selama aplikasi masih berjalan. Long-press tetap menjadi kontrol sistem untuk keluar dari aplikasi, bukan event khusus Lua; jika aplikasi keluar saat SW masih ditekan, callback release tidak dikirim. |
 | `on_swipe(direction)` | `"left"` atau `"right"` | Dipanggil saat firmware mendeteksi gesture swipe yang valid. Gesture turun dipetakan ke `"right"` dan gesture naik ke `"left"` oleh pemetaan pad firmware. |
 | `on_encoder(step)` | Integer `+1` atau `-1` | Dipanggil sekali untuk setiap langkah encoder. Putaran cepat dikirim sebagai beberapa callback langkah, bukan satu delta besar. |
+| `on_pointer(state, x, y)` | `"down"`, `"move"`, atau `"up"`, serta koordinat integer | Sentuhan layar real-time di area aplikasi (`x` 0..319, `y` 0..215, titik (0, 0) = kiri atas area aplikasi). `"down"` saat jari menyentuh, `"move"` tiap posisi berubah, `"up"` saat diangkat (dengan posisi terakhir). Lihat [Layar sentuh](#layar-sentuh-koordinat-real-time). |
 | `on_text(text, submitted)` | String dan boolean | Hasil `keyboard.request()`: dipanggil sekali setelah pengguna menutup keyboard virtual. Lihat bagian [Keyboard virtual](#keyboard-virtual-input-teks). |
 
 Callback input tidak menerima klik tunggal/ganda atau event hold. Touch callback melaporkan transisi kontak yang sudah distabilkan, sehingga satu gerakan swipe dapat memicu transisi sentuh dan callback swipe. SW long-press mengeluarkan aplikasi melalui UI sistem; jangan mengandalkan callback `on_sw` untuk memproses durasi tahan.
+
+### Layar sentuh (koordinat real-time)
+
+Layar sentuh XPT2046 mengirim posisi jari ke aplikasi dengan dua cara yang bisa dipakai bersamaan: **callback** `on_pointer(state, x, y)` (event `down`/`move`/`up`) atau **polling** di `draw()` lewat `vyn.request("input.touch")` / `input.pointer()` (`down`, `x`, `y` saat ini). Koordinat sudah dikalibrasi sistem ke piksel area aplikasi, jadi sama persis dengan koordinat `screen.*`.
+
+```lua
+local px, py, drawing = 0, 0, false
+local dots = {}
+
+function on_pointer(state, x, y)
+  px, py = x, y
+  if state == "down" then drawing = true end
+  if drawing then dots[#dots + 1] = {x, y}; if #dots > 200 then table.remove(dots, 1) end end
+  if state == "up" then drawing = false end
+end
+
+function draw()
+  for i, d in ipairs(dots) do
+    screen.fill_circle(d[1], d[2], 4, screen.hsv(i * 3, 90, 100))
+  end
+  local t = vyn.request("input.touch")           -- alternatif polling
+  if t.ok and t.data.down then
+    screen.circle(t.data.x, t.data.y, 14, 0xFFFFFF)
+  end
+end
+```
+
+Aturan:
+
+- **Mode pointer diaktifkan oleh aplikasi**: bila program mendefinisikan `on_pointer` atau memanggil `input.touch`/`input.pointer` (kira-kira tiap frame), sentuhan di area aplikasi dikirim mentah dan sistem **tidak** lagi menerjemahkannya menjadi klik SW, putaran encoder, atau swipe. Tanpa itu, layar sentuh berperilaku seperti kontrol fisik: ketuk = klik SW, tahan = tahan SW, seret vertikal = putar encoder, usap horizontal = `on_swipe`.
+- **Bar judul** (24 piksel teratas) selalu milik sistem: ketuk ✕ di kanan membuka dialog tutup/suspend (setara tahan SW). Pad, SW, dan encoder fisik tetap berfungsi dan tetap bisa dipakai untuk keluar.
+- Satu jari (tanpa multi-touch). Setelah jari diangkat, `input.touch` mengembalikan `down = false` dan `x`,`y` di posisi terakhir.
+- Callback `on_pointer` dipanggil dari loop UI, bukan setiap piksel; `"move"` hanya bila posisi berubah.
 
 GPIO3 dan GPIO7 memakai margin 1,35× hanya pada ambang yang berasal dari span sentuhan terkonfirmasi. Lantai tap dan swipe dari MAD/noise peak dibatasi masing-masing 400 dan 240 hitungan agar derau RF tidak menaikkan ambang tanpa batas sebelum sentuhan pertama. Pulsa swipe pada kedua pad harus bertahan minimal 14 ms dan sentuhan stabil minimal 120 ms. Nilai ini kompromi perangkat lunak; kabel touch yang panjang dan berdekatan dengan MT3608/RF tetap dapat memerlukan perbaikan routing atau shielding.
 
@@ -230,8 +285,8 @@ Contoh membaca status saat menggambar:
 
 ```lua
 function draw()
-  screen.text(4, 24, input.touch(1) and "PAD 1 DOWN" or "PAD 1 UP")
-  screen.text(4, 40, input.sw() and "SW DOWN" or "SW UP")
+  screen.text(8, 24, input.touch(1) and "PAD 1 DOWN" or "PAD 1 UP", 0xFFFFFF, 2)
+  screen.text(8, 56, input.sw() and "SW DOWN" or "SW UP", 0xFFE14D, 2)
 end
 ```
 
@@ -459,16 +514,16 @@ Nilai yang disimpan mempertahankan tipe string, angka integer/pecahan, atau bool
 
 ## Contoh interaksi
 
-### Counter dengan touch, SW, swipe, dan encoder
+### Counter dengan touch pad, SW, swipe, dan encoder
 
 ```lua
 local count = 0
 
 function draw()
-  screen.text(4, 18, "INPUT COUNTER")
-  screen.line(4, 23, 124, 23)
-  screen.text(4, 36, "Count: " .. count)
-  screen.text(4, 52, "Swipe kiri: kurang")
+  screen.text(12, 10, "INPUT COUNTER", screen.rgb(255, 225, 77), 2)
+  screen.line(12, 34, 308, 34, 0x00E5FF)
+  screen.text(12, 52, "Count: " .. count, 0xFFFFFF, 3)
+  screen.text(12, 100, "Swipe kiri: kurang", 0xB0B8C8)
 end
 
 function on_touch(pad, touched)
@@ -512,7 +567,7 @@ Lua disimpan sebagai string UTF-8 pada field `code`, sedangkan record tetap mema
 
 Di JSON, baris baru dalam `code` di-escape sebagai `\n`; pada Lua source, itu adalah baris baru sungguhan. Jangan mengisi field `code` dengan objek JSON DSL. Batas source adalah 16 KiB UTF-8. Program akan divalidasi dengan interpreter firmware sebelum disimpan.
 
-Thumbnail OLED berukuran 16×16 piksel, monokrom, MSB-first. Representasi hex-nya harus tepat 64 digit (32 byte).
+Thumbnail berukuran 16×16 piksel, monokrom (ikon menu aplikasi), MSB-first. Representasi hex-nya harus tepat 64 digit (32 byte).
 
 ## Membuat dan mengunggah program
 
@@ -527,5 +582,5 @@ Thumbnail OLED berukuran 16×16 piksel, monokrom, MSB-first. Representasi hex-ny
 - Jangan pernah memasukkan kredensial, token, atau rahasia dalam source program.
 - Sandbox tidak membuat input uploader/database aman secara otomatis. Aturan RTDB menentukan siapa yang dapat membaca dan menulis; hindari aturan publik untuk produksi.
 - Source program dibatasi 16 KiB, alokasi interpreter 48 KiB, dan callback/initialization Lua masing-masing dibatasi sekitar 30.000 instruksi.
-- Satu-satunya jalur ke hardware adalah Device API (`vyn.request` dan pembungkusnya) serta kanvas `screen`. Operasi hardware terbatas ke layar, status input, permintaan teks lewat keyboard virtual (`keyboard.request`), buzzer, LED RGB, serta pembacaan sensor gerak, baterai, suhu chip, waktu, dan tingkat suara mikrofon (pembacaan semuanya hanya-baca; tidak ada rekaman audio). Program tidak dapat mengakses Wi-Fi, BLE langsung, filesystem, proses lain, atau GPIO arbitrer.
+- Satu-satunya jalur ke hardware adalah Device API (`vyn.request` dan pembungkusnya) serta kanvas `screen`. Operasi hardware terbatas ke layar, status input (pad, SW, encoder, dan sentuhan layar), permintaan teks lewat keyboard virtual (`keyboard.request`), buzzer, LED RGB, serta pembacaan sensor gerak, baterai, suhu chip, waktu, dan tingkat suara mikrofon (pembacaan semuanya hanya-baca; tidak ada rekaman audio). Program tidak dapat mengakses Wi-Fi, BLE langsung, filesystem, proses lain, atau GPIO arbitrer.
 - Memory exhaustion atau runtime error mengakhiri aplikasi. Gunakan state lokal kecil dan render layar di `draw()` alih-alih menjalankan loop.
