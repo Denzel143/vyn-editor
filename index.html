@@ -86,7 +86,7 @@
     @keyframes simStripe { to { background-position:28px 0; } }
     #simLoadPct { font:600 14px ui-monospace, monospace; color:var(--accent); }
     @media (prefers-reduced-motion:reduce) { #simLoadFill { animation:none; } }
-    #oled { width:100%; aspect-ratio:2/1; display:block; image-rendering:pixelated; background:#000; border:6px solid #0b0f11; border-radius:8px; box-shadow:0 0 0 1px var(--line); }
+    #oled { width:100%; aspect-ratio:4/3; display:block; image-rendering:pixelated; touch-action:none; cursor:crosshair; background:#000; border:6px solid #0b0f11; border-radius:8px; box-shadow:0 0 0 1px var(--line); }
     .sim-hint { margin:0 0 12px; font-size:12px; line-height:1.6; }
     .sim-enc { display:flex; justify-content:center; }
     #knob { width:min(180px, calc(var(--w) * .38)); height:auto; aspect-ratio:1; touch-action:none; user-select:none; cursor:grab; }
@@ -831,7 +831,7 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
       <div class="sim-left">
         <canvas id="padStrip"></canvas>
         <div class="oled-wrap">
-          <canvas id="oled" width="128" height="64"></canvas>
+          <canvas id="oled" width="320" height="240" aria-label="Layar LCD 320×240 (area aplikasi 320×216); klik/seret = sentuhan"></canvas>
           <div id="simLoad" aria-hidden="true"><div class="sim-load-bar"><i id="simLoadFill"></i></div><b id="simLoadPct">0%</b></div>
         </div>
         <div class="sim-enc">
@@ -954,7 +954,7 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
     wrap: true
   });
   // Nilai placeholder awal
-  editor.setValue('function draw()\n  screen.text(4, 18, "APLIKASI SAYA")\nend', -1);
+  editor.setValue('function draw()\n  local w, h = screen.width(), screen.height()\n  screen.gradient(0, 0, w, h, screen.rgb(20, 30, 80), screen.rgb(90, 20, 110))\n  screen.text(12, 12, "APLIKASI SAYA", screen.rgb(255, 220, 90), 2)\n  screen.fill_round_rect(12, 50, 140, 40, 10, screen.hsv(180, 80, 95))\nend', -1);
 
   const firebaseConfig = {
     apiKey: "AIzaSyDDUsSdAov70r3scsG8RA1c6wcajftNF30",
@@ -1017,25 +1017,6 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
   let loadedKey = '';
   let appsData = {};
   let facesData = {};
-
-  // ===== Aturan versi: versi baru WAJIB lebih tinggi daripada versi yang sudah ada di RTDB =====
-  const parseVer = s => /^v?\d+(\.\d+)*$/i.test(String(s ?? "").trim()) ? String(s).trim().replace(/^v/i, "").split(".").map(Number) : null;
-  const cmpVer = (a, b) => {
-    const n = Math.max(a.length, b.length);
-    for (let i = 0; i < n; i++) { const d = (a[i] || 0) - (b[i] || 0); if (d) return d < 0 ? -1 : 1; }
-    return 0;
-  };
-  // Mengembalikan pesan masalah bila versi baru tidak boleh diunggah, atau null bila boleh.
-  const versionIssue = (store, id, name, version) => {
-    const existing = Object.prototype.hasOwnProperty.call(store, id) ? store[id] : null;
-    if (!existing || typeof existing !== "object" || existing.name !== name) return null;
-    const oldRaw = String(existing.version ?? "").trim();
-    const oldV = parseVer(oldRaw);
-    if (!oldV) return null; // versi lama kosong / tidak berformat angka: tidak bisa dibandingkan
-    const newV = parseVer(version);
-    if (!newV) return `Versi harus berupa angka dipisah titik (contoh: 1.0.1) agar bisa dibandingkan dengan versi lama ${oldRaw}.`;
-    return cmpVer(newV, oldV) > 0 ? null : `Versi ${version} harus lebih tinggi daripada versi yang sudah ada (${oldRaw}).`;
-  };
 
   const tabs = document.querySelectorAll('.tab');
   tabs.forEach(tab => {
@@ -1120,16 +1101,14 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
   onValue(ref(db, 'apps'), (snapshot) => {
     appsData = snapshot.val() || {};
     renderSidebar();
-    try { validate(); } catch (e) {}
   });
   onValue(ref(db, 'watchfaces'), (snapshot) => {
     facesData = snapshot.val() || {};
     renderSidebar();
-    try { fValidate(); } catch (e) {}
   });
 
   // ===== Verifikator =====
-  const DEFAULT_CODE = 'function draw()\n  screen.text(4, 18, "APLIKASI SAYA")\nend';
+  const DEFAULT_CODE = 'function draw()\n  local w, h = screen.width(), screen.height()\n  screen.gradient(0, 0, w, h, screen.rgb(20, 30, 80), screen.rgb(90, 20, 110))\n  screen.text(12, 12, "APLIKASI SAYA", screen.rgb(255, 220, 90), 2)\n  screen.fill_round_rect(12, 50, 140, 40, 10, screen.hsv(180, 80, 95))\nend';
   let busy = false;
 
   // ===== Verifikator Lua offline (Lua 5.4, profil VynWatch) =====
@@ -1145,8 +1124,11 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
 
     // Tanda tangan API: n = angka, s = string, v = nilai string/angka/boolean.
     const API = {
-      screen: { text: "nns", line: "nnnn", rect: "nnnn", fill_rect: "nnnn", circle: "nnn", fill_circle: "nnn", width: "", height: "" },
-      input:  { touch: "n", sw: "", millis: "" },
+      // "a|b": a = argumen wajib, b = argumen opsional (boleh dihilangkan / nil). n = bilangan bulat, f = angka (boleh pecahan), c = warna 0xRRGGBB, s = string, v = nilai string/angka/boolean.
+      screen: { width: "", height: "", rgb: "nnn", hsv: "fff", color: "c", clear: "|c", pixel: "nn|c", line: "nnnn|c", rect: "nnnn|c", fill_rect: "nnnn|c",
+                round_rect: "nnnnn|c", fill_round_rect: "nnnnn|c", circle: "nnn|c", fill_circle: "nnn|c", triangle: "nnnnnn|c", fill_triangle: "nnnnnn|c",
+                gradient: "nnnncc|v", text: "nns|cn", text_width: "s|n" },
+      input:  { touch: "n", sw: "", millis: "", pointer: "" },
       storage: { get: "s", set: "sv", remove: "s" },
       sound:  { buzzer: "nn" },
       imu:    { angle: "", accel: "" },
@@ -1157,8 +1139,8 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
       vyn:    { request: "s", has: "s", list: "", version: null },
       app:    { id: null, name: null, keep_alive: "" }
     };
-    // Device API v1: nama resource sama dengan skema src/vyn_api.cpp
-    const VYN_RES = set("device.info system.uptime system.time system.temperature power.battery motion.orientation motion.accel audio.level input.pad input.switch indicator.rgb audio.tone");
+    // Device API v2: nama resource sama dengan skema src/vyn_api.cpp
+    const VYN_RES = set("device.info system.uptime system.time system.temperature power.battery motion.orientation motion.accel audio.level input.pad input.switch indicator.rgb audio.tone input.touch");
     const LIBS = {
       string: set("byte char find format gmatch gsub len lower match rep reverse sub upper pack packsize unpack"),
       table:  set("concat insert move pack remove sort unpack"),
@@ -1167,7 +1149,7 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
     };
     const FORBIDDEN = set("load loadstring loadfile dofile require io os package coroutine debug collectgarbage print warn rawset setmetatable getmetatable");
     const KNOWN = set("assert error ipairs next pairs pcall rawequal rawget rawlen select tonumber tostring type xpcall _G _VERSION string table math utf8 screen input storage sound imu device rgb mic keyboard vyn app");
-    const CALLBACKS = { draw: [], on_touch: ["pad", "touched"], on_sw: ["pressed"], on_swipe: ["direction"], on_encoder: ["step"], on_text: ["text", "submitted"] };
+    const CALLBACKS = { draw: [], on_touch: ["pad", "touched"], on_sw: ["pressed"], on_swipe: ["direction"], on_encoder: ["step"], on_text: ["text", "submitted"], on_pointer: ["state", "x", "y"] };
     const HINTS = { unpack: "gunakan table.unpack", loadstring: "", setfenv: "tidak ada di Lua 5.4", getfenv: "tidak ada di Lua 5.4", bit: "gunakan operator & | ~ << >>", bit32: "gunakan operator & | ~ << >>" };
 
     // ---------- Tokenizer ----------
@@ -1370,18 +1352,23 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
           if (!args.length) { add("error", t.line, t.col, "vyn.request membutuhkan minimal 1 argumen (nama resource)"); return; }
           if (args.length > 2) add("warning", t.line, t.col, "vyn.request hanya memakai 2 argumen (resource, params); sisanya diabaikan");
           const a = args[0], b = args[1];
-          if (a.kind === "str" && !VYN_RES.has(a.value)) add("warning", a.line || t.line, a.col || t.col, `vyn.request: resource "${a.value}" tidak dikenal di Device API v1 (hasilnya error=\"unknown_resource\")`);
+          if (a.kind === "str" && !VYN_RES.has(a.value)) add("warning", a.line || t.line, a.col || t.col, `vyn.request: resource "${a.value}" tidak dikenal di Device API v2 (hasilnya error=\"unknown_resource\")`);
           else if (a.kind === "num" || a.kind === "table" || a.kind === "func" || a.kind === "lit") add("error", a.line || t.line, a.col || t.col, "argumen ke-1 vyn.request harus string (nama resource)");
           if (b && (b.kind === "num" || b.kind === "str" || b.kind === "func")) add("error", b.line || t.line, b.col || t.col, "argumen ke-2 vyn.request harus tabel params");
           return;
         }
+        let optN = 0;
+        if (spec.includes("|")) { const sp = spec.split("|"); optN = sp[1].length; spec = sp[0] + sp[1]; }
+        const reqN = spec.length - optN, nilArg = a => a.kind === "lit" && a.value === "nil";
         const last = args[args.length - 1];
         const multi = last && (last.kind === "call" || last.kind === "vararg");
-        if (!multi && args.length < spec.length) add("error", t.line, t.col, `${name} membutuhkan ${spec.length} argumen, hanya ${args.length} diberikan`);
+        if (!multi && args.length < reqN) add("error", t.line, t.col, `${name} membutuhkan ${reqN} argumen, hanya ${args.length} diberikan`);
         else if (!multi && args.length > spec.length) add("warning", t.line, t.col, `${name} hanya memakai ${spec.length} argumen; sisanya diabaikan`);
         args.forEach((a, i) => {
-          const s = spec[i];
+          let s = spec[i];
           if (!s) return;
+          if (i >= reqN && nilArg(a)) return;                       // argumen opsional = nil -> default
+          if (s === "c" || s === "f") s = "n";
           const label = `argumen ke-${i + 1} ${name}`;
           const booleanLiteral = s === "v" && a.kind === "lit" && (a.value === "true" || a.value === "false");
           if ((a.kind === "lit" && !booleanLiteral) || a.kind === "table" || a.kind === "func"
@@ -1391,6 +1378,8 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
           else if (s === "n" && a.kind === "str" && !(a.value.trim() !== "" && isFinite(Number(a.value)))) add("error", t.line, t.col, `${label} harus angka, bukan string "${a.value.slice(0, 20)}"`);
         });
         args.forEach((a, i) => {
+          if (spec[i] === "c" && a.kind === "num" && !(Number.isInteger(a.value) && a.value >= 0 && a.value <= 0xFFFFFF))
+            add("error", a.line || t.line, a.col || t.col, `argumen ke-${i + 1} ${name}: warna harus bilangan bulat 0..0xFFFFFF (gunakan screen.rgb(r, g, b) atau 0xRRGGBB)`);
           if (spec[i] === "n" && a.kind === "num" && !Number.isInteger(a.value))
             add("error", a.line || t.line, a.col || t.col, `argumen ke-${i + 1} ${name} harus bilangan bulat (pecahan menghentikan aplikasi: "number has no integer representation")`);
         });
@@ -1406,6 +1395,8 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
           if (/[^\x00-\x7F]/.test(v)) add("warning", t.line, t.col, "screen.text: karakter non-ASCII diabaikan firmware");
           if (v.length > 120) add("warning", t.line, t.col, `screen.text: teks ${v.length} byte melebihi batas 120 byte`);
         }
+        if (name === "screen.text" && args[4] && args[4].kind === "num" && !(Number.isInteger(args[4].value) && args[4].value >= 1 && args[4].value <= 4))
+          add("warning", t.line, t.col, "screen.text: ukuran huruf dijepit ke 1..4 (font 6×8 piksel dikali ukuran)");
         if (name === "input.touch" && args[0] && args[0].kind === "num" && !(Number.isInteger(args[0].value) && args[0].value >= 1 && args[0].value <= 4))
           add("error", t.line, t.col, "input.touch: pad harus 1 sampai 4 (di luar itu menghentikan aplikasi)");
         if (name === "rgb.set") {
@@ -1790,7 +1781,7 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
           if (!d.vararg && d.params > exp.length)
             add("warning", d.line, d.col, `${name}(${exp.join(", ")}) hanya menerima ${exp.length} argumen; parameter lain selalu nil`);
         } else if (/^on_/.test(name)) {
-          add("warning", d.line, d.col, `'${name}' bukan callback yang dikenal firmware (on_touch, on_sw, on_swipe, on_encoder, on_text) dan tidak akan dipanggil`);
+          add("warning", d.line, d.col, `'${name}' bukan callback yang dikenal firmware (on_touch, on_sw, on_swipe, on_encoder, on_text, on_pointer) dan tidak akan dipanggil`);
         }
       }
       const seen = new Set();
@@ -1852,8 +1843,6 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
     const code = editor.getValue();
     const th = checkThumb($("thumbnail").value);
     const lua = checkLua(code);
-    const vi = versionIssue(appsData, v.id, v.name, v.version);
-    const verNote = vi ? `<li class="bad">✗ ${esc(vi)}</li>` : "";
     const checks = [
       { ok: /^[A-Za-z0-9_-]{1,24}$/.test(v.id), msg: v.id ? "ID: huruf, angka, _ atau -, maksimum 24 karakter." : "ID unik wajib diisi.", good: "ID valid." },
       { ok: ["app", "game"].includes(v.type), msg: "Tipe tidak valid.", good: "Tipe valid." },
@@ -1867,9 +1856,9 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
     editor.session.setAnnotations((lua.diags || []).map(d => ({ row: d.line - 1, column: d.col - 1, text: d.msg, type: d.sev })));
     const extra = (lua.diags || []).filter(d => d !== lua.first).slice(0, 15).map(d =>
       `<li class="${d.sev === "error" ? "bad" : "warn"}">${d.sev === "error" ? "✗" : "⚠"} Baris ${d.line}, kolom ${d.col}: ${esc(d.msg)}</li>`).join("");
-    $("checks").innerHTML = checks.filter((c, i) => !c.ok || i === 6).map(c => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.ok ? c.good : c.msg)}</li>`).join("") + verNote + extra;
+    $("checks").innerHTML = checks.filter((c, i) => !c.ok || i === 6).map(c => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.ok ? c.good : c.msg)}</li>`).join("") + extra;
     const ok = checks.every(c => c.ok);
-    $("upload").disabled = !ok || !!vi || busy;
+    $("upload").disabled = !ok || busy;
     $("aZip").disabled = !ok;
     return { ok, record: ok ? { id: v.id, name: v.name, type: v.type, version: v.version, thumbnail: th.value, description: v.description, code } : null };
   }
@@ -1975,16 +1964,15 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
       const nameMatch = nameMatches[0] || null;
       if (idMatch && idMatch[1] && idMatch[1].name === record.name) {
         const existing = idMatch[1];
-        const vIssue = versionIssue(appsData, record.id, record.name, record.version);
-        if (vIssue) {
-          window.mgToast(vIssue, "bad", 7000);
-          status(vIssue, true);
-          return;
-        }
         const confirmed = await confirmUpdate(
           `"${record.name}" (${record.id}) sudah ada di RTDB. Ganti versi ${existing.version || "tidak diketahui"} dengan ${record.version}?`
         );
         if (!confirmed) return;
+        if (String(existing.version || "") === record.version) {
+          window.mgToast(`Versi "${record.version}" sama dengan versi yang sudah ada. Naikkan versi dulu; isi pekerjaanmu tetap tersimpan.`, "bad", 7000);
+          status("Versi belum berubah.", true);
+          return;
+        }
       } else if (idMatch || nameMatch) {
         const conflicts = new Map();
         if (idMatch) conflicts.set(idMatch[0], idMatch[1]);
@@ -2037,11 +2025,14 @@ function __run(src) local f, e = load(src, "=app", "t"); if not f then error(e, 
 function __call(name, ...) local f = _G[name]; if type(f) ~= "function" then return false end left = BUDGET; sethook(onbudget, "", 1000); f(...); sethook(); return true end
 local mtype = math.type
 local function numstr(v) if type(v) == "number" then return tostring(v) end return v end   -- seperti lua_tolstring: 3.0 -> "3.0"
-local text = H.text
+-- DISPLAY v2: permukaan RGB 320x216 (di bawah bar judul sistem 24 px). Warna = 0xRRGGBB; argumen warna opsional di akhir (default = warna pena).
 screen = {
-  text = function(x, y, s) text(x, y, numstr(s)) end,
-  line = H.line, rect = H.rect, fill_rect = H.frect, circle = H.circle, fill_circle = H.fcircle,
-  width = function() return 128 end, height = function() return 64 end }
+  width = function() return 320 end, height = function() return 216 end,
+  rgb = H.grgb, hsv = H.ghsv, color = H.gcolor, clear = H.gclear, pixel = H.gpixel, line = H.gline,
+  rect = H.grect, fill_rect = H.gfrect, round_rect = H.grrect, fill_round_rect = H.gfrrect,
+  circle = H.gcirc, fill_circle = H.gfcirc, triangle = H.gtri, fill_triangle = H.gftri, gradient = H.ggrad,
+  text = function(x, y, s, c, sz) H.gtext(x, y, numstr(s), c, sz) end,
+  text_width = function(s, sz) return H.gtw(numstr(s), sz) end }
 storage = {
   get = function(k) k = numstr(k); local v = H.sget(k); if v ~= nil and H.sgett(k) == "f" then v = v + 0.0 end return v end,
   set = function(k, v) local t = type(v); return H.sset(numstr(k), v, t == "number" and mtype(v) or t) end,
@@ -2049,11 +2040,11 @@ storage = {
 -- ===== LAPISAN 2: broker Device API (skema IDENTIK dengan src/vyn_api.cpp) =====
 -- ===== LAPISAN 1: HAL simulator = fungsi host H.* (nilai dari slider/kontrol simulator); hanya broker yang memanggilnya =====
 local ipairs, pairs, error, tsort, huge = ipairs, pairs, error, table.sort, math.huge   -- salinan lokal: program tidak bisa merusak broker dengan menimpa global
-local VER, RES, floor = 1, {}, math.floor
+local VER, RES, floor = 2, {}, math.floor
 -- field: {nama, tipe, min, max}; param: {nama, tipe, min, max, wajib}
 local function def(name, params, fields, h) RES[name] = { p = params, f = fields, h = h } end
-def("device.info", {}, {{"api","int"},{"display_w","int"},{"display_h","int"},{"pads","int"}},
-  function() return "ok", { api = VER, display_w = 128, display_h = 64, pads = 4 } end)
+def("device.info", {}, {{"api","int"},{"display_w","int"},{"display_h","int"},{"pads","int"},{"color","bool"},{"touch","bool"}},
+  function() return "ok", { api = VER, display_w = 320, display_h = 216, pads = 4, color = true, touch = true } end)
 def("system.uptime", {}, {{"ms","int"}}, function() return "ok", { ms = H.millis() } end)
 def("system.time", {}, {{"weekday","int",1,7},{"day","int",1,31},{"month","int",1,12},{"year","int",2000,2200},{"hour","int",0,23},{"minute","int",0,59},{"second","int",0,59}},
   function() local w = H.time(1); if w == nil then return "not_ready" end
@@ -2073,6 +2064,8 @@ def("indicator.rgb", {{"r","int",0,255},{"g","int",0,255},{"b","int",0,255},{"au
     if p.r == nil or p.g == nil or p.b == nil then return "bad_param", "r, g, b are required" end
     H.rgb(p.r, p.g, p.b); return "ok", {}
   end)
+def("input.touch", {}, {{"down","bool"},{"x","int",0,319},{"y","int",0,215}},
+  function() return "ok", { down = H.ptr(1), x = H.ptr(2), y = H.ptr(3) } end)
 def("audio.tone", {{"freq","int",100,10000,true},{"ms","int",1,2000,true}}, {}, function(p) H.buzzer(p.freq, p.ms); return "ok", {} end)
 
 local function chk(specs, p)
@@ -2124,7 +2117,8 @@ vyn = { version = VER, request = request,
 local function rd(name, params) local e = request(name, params); if e.error == "bad_param" then error(e.detail, 3) end; return e.data end
 input = { touch = function(p) local d = rd("input.pad", { pad = tonumber(p) }); return d ~= nil and d.down end,
   sw = function() local d = rd("input.switch"); return d ~= nil and d.down end,
-  millis = function() local d = rd("system.uptime"); return d and d.ms or 0 end }
+  millis = function() local d = rd("system.uptime"); return d and d.ms or 0 end,
+  pointer = function() local d = rd("input.touch"); if not d then return nil end return d.down, d.x, d.y end }
 sound = { buzzer = function(f, d) rd("audio.tone", { freq = tonumber(f), ms = tonumber(d) }) end }
 imu = { angle = function() local d = rd("motion.orientation"); if not d then return nil end return d.pitch, d.yaw, d.roll end,
         accel = function() local d = rd("motion.accel"); if not d then return nil end return d.x, d.y, d.z end }
@@ -2144,7 +2138,10 @@ function __gc() collect(); collect() end
 
   const sim = (() => {
     const W = 128, H = 64, fb = new Uint8Array(W * H);
-    const oled = $("oled"), octx = oled.getContext("2d"), img = octx.createImageData(W, H);
+    const oled = $("oled"), octx = oled.getContext("2d");
+    // ---------- LCD 320x240 RGB565 (DISPLAY v2): permukaan aplikasi = 320x216 di bawah bar judul 24 px ----------
+    const LW = 320, LH = 240, TOP = 24, AH = 216;
+    const rgbBuf = new Uint32Array(LW * LH), img = new ImageData(new Uint8ClampedArray(rgbBuf.buffer), LW, LH);
     const logEl = $("simLog");
     const say = (m, bad) => {
       const d = document.createElement("div"); d.textContent = m; if (bad) d.style.color = "var(--warn)";
@@ -2217,10 +2214,101 @@ function __gc() collect(); collect() end
         cx += 6;
       }
     };
-    const blit = () => {
-      const d = img.data;
-      for (let i = 0; i < W * H; i++) { const on = fb[i]; d[i * 4] = on ? 223 : 0; d[i * 4 + 1] = on ? 246 : 0; d[i * 4 + 2] = on ? 255 : 0; d[i * 4 + 3] = 255; }
-      octx.putImageData(img, 0, 0);
+    // warna 0xRRGGBB -> RGB565 -> piksel kanvas (meniru kuantisasi LCD ILI9341)
+    const c565 = c => { const R = (c >> 19) & 31, G = (c >> 10) & 63, B = (c >> 3) & 31;
+      return (0xFF000000 | (((B << 3) | (B >> 2)) << 16) | (((G << 2) | (G >> 4)) << 8) | ((R << 3) | (R >> 2))) >>> 0; };
+    let gpen = c565(0xFFFFFF), gOy = TOP, gLim = AH;
+    const BG = new Uint32Array(LW * LH);   // latar: wallpaper gelap (mirip wallpaper redup di perangkat)
+    for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) {
+      const t = y / LH, a = Math.exp(-(((x - 260) ** 2) + ((y - 40) ** 2)) / 14000), b = Math.exp(-(((x - 50) ** 2) + ((y - 210) ** 2)) / 16000);
+      BG[y * LW + x] = c565((Math.min(255, 12 + 20 * t + 70 * a + 10 * b) << 16) | (Math.min(255, 14 + 8 * t + 20 * a + 60 * b) << 8) | Math.min(255, 38 + 12 * t + 60 * a + 70 * b));
+    }
+    const gpx = (x, y, c) => { if (x >= 0 && x < LW && y >= 0 && y < gLim) rgbBuf[(y + gOy) * LW + x] = c; };
+    const gfill = (x, y, w, h, c) => {
+      let x1 = x + w, y1 = y + h; if (x < 0) x = 0; if (y < 0) y = 0; if (x1 > LW) x1 = LW; if (y1 > gLim) y1 = gLim;
+      for (let yy = y; yy < y1; yy++) { const o = (yy + gOy) * LW; for (let xx = x; xx < x1; xx++) rgbBuf[o + xx] = c; }
+    };
+    const ghl = (x, y, w, c) => gfill(x, y, w, 1, c), gvl = (x, y, h, c) => gfill(x, y, 1, h, c);
+    const gline = (x0, y0, x1, y1, c) => {           // Adafruit_GFX::writeLine (Bresenham)
+      x0 = I(x0); y0 = I(y0); x1 = I(x1); y1 = I(y1);
+      if (x0 === x1) { if (y0 > y1) [y0, y1] = [y1, y0]; return gvl(x0, y0, y1 - y0 + 1, c); }
+      if (y0 === y1) { if (x0 > x1) [x0, x1] = [x1, x0]; return ghl(x0, y0, x1 - x0 + 1, c); }
+      const steep = Math.abs(y1 - y0) > Math.abs(x1 - x0);
+      if (steep) { [x0, y0] = [y0, x0]; [x1, y1] = [y1, x1]; }
+      if (x0 > x1) { [x0, x1] = [x1, x0]; [y0, y1] = [y1, y0]; }
+      const dx = x1 - x0, dy = Math.abs(y1 - y0), ys = y0 < y1 ? 1 : -1; let err = dx >> 1;
+      for (; x0 <= x1; x0++) { if (steep) gpx(y0, x0, c); else gpx(x0, y0, c); err -= dy; if (err < 0) { y0 += ys; err += dx; } }
+    };
+    const grect = (x, y, w, h, c) => { ghl(x, y, w, c); ghl(x, y + h - 1, w, c); gvl(x, y, h, c); gvl(x + w - 1, y, h, c); };
+    const gcircH = (x0, y0, r, corner, c) => {       // drawCircleHelper
+      let f = 1 - r, ddx = 1, ddy = -2 * r, x = 0, y = r;
+      while (x < y) {
+        if (f >= 0) { y--; ddy += 2; f += ddy; } x++; ddx += 2; f += ddx;
+        if (corner & 4) { gpx(x0 + x, y0 + y, c); gpx(x0 + y, y0 + x, c); }
+        if (corner & 2) { gpx(x0 + x, y0 - y, c); gpx(x0 + y, y0 - x, c); }
+        if (corner & 8) { gpx(x0 - y, y0 + x, c); gpx(x0 - x, y0 + y, c); }
+        if (corner & 1) { gpx(x0 - y, y0 - x, c); gpx(x0 - x, y0 - y, c); }
+      }
+    };
+    const gfillH = (x0, y0, r, corners, delta, c) => {   // fillCircleHelper
+      let f = 1 - r, ddx = 1, ddy = -2 * r, x = 0, y = r, pxx = x, pyy = y; delta++;
+      while (x < y) {
+        if (f >= 0) { y--; ddy += 2; f += ddy; } x++; ddx += 2; f += ddx;
+        if (x < y + 1) { if (corners & 1) gvl(x0 + x, y0 - y, 2 * y + delta, c); if (corners & 2) gvl(x0 - x, y0 - y, 2 * y + delta, c); }
+        if (y !== pyy) { if (corners & 1) gvl(x0 + pyy, y0 - pxx, 2 * pxx + delta, c); if (corners & 2) gvl(x0 - pyy, y0 - pxx, 2 * pxx + delta, c); pyy = y; }
+        pxx = x;
+      }
+    };
+    const gcirc = (x0, y0, r, fill, c) => {
+      x0 = I(x0); y0 = I(y0); r = I(r); if (r < 0) return;
+      if (fill) { gvl(x0, y0 - r, 2 * r + 1, c); gfillH(x0, y0, r, 3, 0, c); return; }
+      gpx(x0, y0 + r, c); gpx(x0, y0 - r, c); gpx(x0 + r, y0, c); gpx(x0 - r, y0, c); gcircH(x0, y0, r, 15, c);
+    };
+    const grrect = (x, y, w, h, r, fill, c) => {
+      x = I(x); y = I(y); w = I(w); h = I(h); r = Math.min(I(r), w >> 1, h >> 1); if (w <= 0 || h <= 0) return;
+      if (fill) { gfill(x + r, y, w - 2 * r, h, c); gfillH(x + w - r - 1, y + r, r, 1, h - 2 * r - 1, c); gfillH(x + r, y + r, r, 2, h - 2 * r - 1, c); return; }
+      ghl(x + r, y, w - 2 * r, c); ghl(x + r, y + h - 1, w - 2 * r, c); gvl(x, y + r, h - 2 * r, c); gvl(x + w - 1, y + r, h - 2 * r, c);
+      gcircH(x + r, y + r, r, 1, c); gcircH(x + w - r - 1, y + r, r, 2, c); gcircH(x + w - r - 1, y + h - r - 1, r, 4, c); gcircH(x + r, y + h - r - 1, r, 8, c);
+    };
+    const gtri = (a, b, c2, d, e, f, c, fill) => {
+      a = I(a); b = I(b); c2 = I(c2); d = I(d); e = I(e); f = I(f);
+      if (!fill) { gline(a, b, c2, d, c); gline(c2, d, e, f, c); gline(e, f, a, b, c); return; }
+      let x0 = a, y0 = b, x1 = c2, y1 = d, x2 = e, y2 = f, t;   // fillTriangle (Adafruit_GFX)
+      if (y0 > y1) { t = y0; y0 = y1; y1 = t; t = x0; x0 = x1; x1 = t; }
+      if (y1 > y2) { t = y2; y2 = y1; y1 = t; t = x2; x2 = x1; x1 = t; }
+      if (y0 > y1) { t = y0; y0 = y1; y1 = t; t = x0; x0 = x1; x1 = t; }
+      if (y0 === y2) { let lo = Math.min(x0, x1, x2), hi = Math.max(x0, x1, x2); return ghl(lo, y0, hi - lo + 1, c); }
+      const dx01 = x1 - x0, dy01 = y1 - y0, dx02 = x2 - x0, dy02 = y2 - y0, dx12 = x2 - x1, dy12 = y2 - y1; let sa = 0, sb = 0, y, A, B;
+      const last = y1 === y2 ? y1 : y1 - 1;
+      for (y = y0; y <= last; y++) { A = x0 + Math.trunc(sa / dy01); B = x0 + Math.trunc(sb / dy02); sa += dx01; sb += dx02; if (A > B) { t = A; A = B; B = t; } ghl(A, y, B - A + 1, c); }
+      sa = dx12 * (y - y1); sb = dx02 * (y - y0);
+      for (; y <= y2; y++) { A = x1 + Math.trunc(sa / dy12); B = x0 + Math.trunc(sb / dy02); sa += dx12; sb += dx02; if (A > B) { t = A; A = B; B = t; } ghl(A, y, B - A + 1, c); }
+    };
+    const gtext = (x, y, s, c, sz) => {              // font klasik 5x7 (sel 6x8) dikali sz; tanpa wrap
+      let cx = I(x), cy = I(y);
+      for (let i = 0, n = 0; i < s.length && n < 120; i++) {
+        let ch = s.charCodeAt(i); if (ch >= 128) continue; n++; if (ch < 32 || ch === 127) ch = 32;
+        if (cx < LW && cy < gLim && cx + 5 * sz >= 0 && cy + 7 * sz >= 0)
+          for (let k = 0; k < 5; k++) { let col = FONT[(ch - 32) * 5 + k]; for (let j = 0; j < 8; j++, col >>= 1) if (col & 1) gfill(cx + k * sz, cy + j * sz, sz, sz, c); }
+        cx += 6 * sz;
+      }
+    };
+    const appBegin = () => {                         // = appLuaDraw() di firmware: latar, bar judul sistem, lalu draw()
+      rgbBuf.set(BG); gOy = 0; gLim = TOP;
+      gfill(0, 0, LW, TOP, c565(0x080808)); ghl(0, TOP - 1, LW, c565(0x00E5FF));
+      gtext(8, 4, $("name").value.trim().slice(0, 20), c565(0x00E5FF), 2);
+      gline(296, 6, 308, 18, c565(0xFF2020)); gline(308, 6, 296, 18, c565(0xFF2020));
+      gOy = TOP; gLim = AH; gpen = c565(0xFFFFFF);
+    };
+    const blit = () => octx.putImageData(img, 0, 0);
+    const blitKb = () => {                           // keyboard virtual (kanvas mono 128x64) diskalakan 2,5x di atas latar, berwarna
+      rgbBuf.set(BG);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (fb[y * W + x]) {
+        const c = c565((Math.round(120 + 135 * y / H) << 16) | (230 << 8) | Math.round(255 - 120 * y / H));
+        const x0 = (x * 5) >> 1, x1 = ((x + 1) * 5) >> 1, y0 = 40 + ((y * 5) >> 1), y1 = 40 + (((y + 1) * 5) >> 1);
+        for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) rgbBuf[yy * LW + xx] = c;
+      }
+      blit();
     };
 
     // ---------- Data dummy sensor ----------
@@ -2493,9 +2581,52 @@ function __gc() collect(); collect() end
       knobView(wAcc / WHEEL_PX * DET * .4); clearTimeout(wView); wView = setTimeout(() => knobView(0), 200);   // knob bergeser sedikit mengikuti jari
     }, { passive: false });
     // SW/knob bisa "macet" bila overlay ditutup atau program berhenti saat tombol masih ditahan (pointerup tidak pernah tiba)
-    const resetInput = () => { swDown = false; clearTimeout(swTimer); cap.classList.remove("down"); acc = 0; lastA = null; rot.classList.remove("drag"); wAcc = 0; knobView(0); };
+    const resetInput = () => { resetPointer(); swDown = false; clearTimeout(swTimer); cap.classList.remove("down"); acc = 0; lastA = null; rot.classList.remove("drag"); wAcc = 0; knobView(0); };
     cap.addEventListener("pointerdown", e => { e.stopPropagation(); cap.setPointerCapture(e.pointerId); setSw(true); });
     ["pointerup", "pointercancel"].forEach(t => cap.addEventListener(t, () => setSw(false)));
+
+    // ---------- Layar sentuh LCD (klik/seret/jari pada kanvas) ----------
+    // Aplikasi yang mendefinisikan on_pointer atau memanggil input.touch/input.pointer mendapat koordinat sentuhan mentah (area aplikasi 320x216).
+    // Aplikasi lain: ketuk = klik SW, tahan = tahan SW, seret vertikal = putar encoder, usap horizontal = on_swipe (sama seperti firmware).
+    // Bar judul (24 px teratas): ketuk tombol x di kanan = tutup program (setara tahan SW).
+    let hasPtrCb = false, ptrReq = -1e9, ptrDownApp = false, ptrX = 0, ptrY = 0;
+    const P = { id: null, mode: "", sx: 0, sy: 0, t: 0, moved: false, swiped: false, hold: false, anchor: 0, holdT: 0 };
+    const ptrMode = () => hasPtrCb || performance.now() - ptrReq < 1500;
+    const opos = e => { const r = oled.getBoundingClientRect(); return { x: Math.max(0, Math.min(LW - 1, Math.floor((e.clientX - r.left) / r.width * LW))), y: Math.max(0, Math.min(LH - 1, Math.floor((e.clientY - r.top) / r.height * LH))) }; };
+    const resetPointer = () => { clearTimeout(P.holdT); P.id = null; P.mode = ""; ptrDownApp = false; };
+    oled.addEventListener("pointerdown", e => {
+      if (!running || P.id !== null) return;
+      const p = opos(e); P.id = e.pointerId; oled.setPointerCapture(e.pointerId); touchAct();
+      P.sx = p.x; P.sy = p.y; P.anchor = p.y; P.t = performance.now(); P.moved = P.swiped = P.hold = false;
+      if (!kbOpen && p.y < TOP) { P.mode = "title"; return; }
+      if (!kbOpen && ptrMode()) { P.mode = "ptr"; ptrDownApp = true; ptrX = p.x; ptrY = Math.max(0, p.y - TOP); guard(() => call("on_pointer", "down", ptrX, ptrY)); return; }
+      P.mode = "legacy";
+      P.holdT = setTimeout(() => { if (P.id !== null && P.mode === "legacy" && !P.moved) { P.hold = true; setSw(true); } }, 350);
+    });
+    oled.addEventListener("pointermove", e => {
+      if (e.pointerId !== P.id) return;
+      const p = opos(e); touchAct();
+      if (P.mode === "ptr") { const y = Math.max(0, p.y - TOP); if (p.x !== ptrX || y !== ptrY) { ptrX = p.x; ptrY = y; guard(() => call("on_pointer", "move", ptrX, ptrY)); } return; }
+      if (P.mode !== "legacy") return;
+      const dx = p.x - P.sx, dy = p.y - P.sy;
+      if (!P.moved && (Math.abs(dx) > 14 || Math.abs(dy) > 14)) { P.moved = true; if (P.hold) { P.hold = false; setSw(false); } }
+      if (!P.swiped && Math.abs(dx) > 46 && Math.abs(dx) > Math.abs(dy) * 1.5) { P.swiped = true; if (kbOpen) kbEnc(dx > 0 ? 1 : -1); else guard(() => call("on_swipe", dx > 0 ? "right" : "left")); }
+      else if (!P.swiped && P.moved && Math.abs(dy) >= Math.abs(dx)) {
+        while (p.y - P.anchor <= -16) { encoderStep(1); P.anchor -= 16; }
+        while (p.y - P.anchor >= 16) { encoderStep(-1); P.anchor += 16; }
+      }
+    });
+    const endPtr = e => {
+      if (e.pointerId !== P.id) return;
+      const mode = P.mode, dur = performance.now() - P.t; clearTimeout(P.holdT); P.id = null; P.mode = "";
+      if (mode === "title") { if (P.sx >= 268 && running) { say("Bar judul: tombol tutup (setara tahan SW): program ditutup."); stop(); } }
+      else if (mode === "ptr") { ptrDownApp = false; guard(() => call("on_pointer", "up", ptrX, ptrY)); }
+      else if (mode === "legacy") {
+        if (P.hold) setSw(false);
+        else if (!P.moved && !P.swiped && dur < 350) { setSw(true); setTimeout(() => setSw(false), 80); }
+      }
+    };
+    ["pointerup", "pointercancel"].forEach(t => oled.addEventListener(t, endPtr));
 
     // ---------- Host API untuk Lua ----------
     // Argumen & galat meniru app_lua.cpp: luaL_checkinteger menolak pecahan/NaN/tak hingga; galat berbentuk "bad argument #n to 'fn' (...)"
@@ -2522,11 +2653,49 @@ function __gc() collect(); collect() end
     };
     const R = (fn, f) => (x, y, w, hh) => rectP(Q(N(x, fn, 1), 0, 127), Q(N(y, fn, 2), 12, 63), Q(N(w, fn, 3), 0, 128), Q(N(hh, fn, 4), 0, 64), f);
     const C = (fn, f) => (x, y, r) => circ(Q(N(x, fn, 1), 0, 127), Q(N(y, fn, 2), 12, 63), Q(N(r, fn, 3), 0, 32), f);
+    const CO = (v, fn, i) => Q(N(v, fn, i), -2000, 2000);
+    const CA = (v, fn, i) => {   // colorArg(): nil = warna pena; selain itu bilangan bulat 0..0xFFFFFF
+      if (v === undefined || v === null) return gpen;
+      const n = NI(v, fn, i); if (n < 0 || n > 0xFFFFFF) throw argErr(fn, i, "color must be 0..0xFFFFFF (use screen.rgb)"); return c565(n);
+    };
+    const SZ = (v, fn, i) => (v === undefined || v === null) ? 1 : Q(NI(v, fn, i), 1, 4);
     const host = () => ({
       appid: $("id").value.trim(), appname: $("name").value.trim(),
-      text: (x, y, s) => text(Q(N(x, "screen.text", 1), 0, 127), Q(N(y, "screen.text", 2), 12, 63), Sx(s, "screen.text", 3)),
-      line: (a, b, c, d) => line(Q(N(a, "screen.line", 1), 0, 127), Q(N(b, "screen.line", 2), 12, 63), Q(N(c, "screen.line", 3), 0, 127), Q(N(d, "screen.line", 4), 12, 63)),
-      rect: R("screen.rect", 0), frect: R("screen.fill_rect", 1), circle: C("screen.circle", 0), fcircle: C("screen.fill_circle", 1),
+      // DISPLAY v2: argumen koordinat dijepit ke ±2000 (seperti coord() di app_lua.cpp); warna opsional = warna pena
+      gtext: (x, y, s, c, sz) => gtext(CO(x, "screen.text", 1), CO(y, "screen.text", 2), Sx(s, "screen.text", 3), CA(c, "screen.text", 4), SZ(sz, "screen.text", 5)),
+      gtw: (s, sz) => Math.min(Sx(s, "screen.text_width", 1).replace(/[^\x00-\x7F]/g, "").slice(0, 120).length, 120) * 6 * SZ(sz, "screen.text_width", 2),
+      grgb: (r, g, b) => { const f = (v, i) => Q(NI(v, "screen.rgb", i), 0, 255); return (f(r, 1) << 16) | (f(g, 2) << 8) | f(b, 3); },
+      ghsv: (h, s, v) => {
+        const num = (x, i) => { if (typeof x !== "number") throw argErr("screen.hsv", i, `number expected, got ${tname(x)}`); return x; };
+        h = ((num(h, 1) % 360) + 360) % 360; s = Q(num(s, 2), 0, 100) / 100; v = Q(num(v, 3), 0, 100) / 100;
+        const cc = v * s, xx = cc * (1 - Math.abs((h / 60) % 2 - 1)), m = v - cc; let r = 0, g = 0, b = 0;
+        if (h < 60) { r = cc; g = xx; } else if (h < 120) { r = xx; g = cc; } else if (h < 180) { g = cc; b = xx; } else if (h < 240) { g = xx; b = cc; } else if (h < 300) { r = xx; b = cc; } else { r = cc; b = xx; }
+        return (Math.round((r + m) * 255) << 16) | (Math.round((g + m) * 255) << 8) | Math.round((b + m) * 255);
+      },
+      gcolor: c => { gpen = CA(c, "screen.color", 1); },
+      gclear: c => { const n = (c === undefined || c === null) ? 0 : NI(c, "screen.clear", 1); if (n < 0 || n > 0xFFFFFF) throw argErr("screen.clear", 1, "color must be 0..0xFFFFFF"); gfill(0, 0, LW, AH, c565(n)); },
+      gpixel: (x, y, c) => gpx(CO(x, "screen.pixel", 1), CO(y, "screen.pixel", 2), CA(c, "screen.pixel", 3)),
+      gline: (a, b, c, d, col) => gline(CO(a, "screen.line", 1), CO(b, "screen.line", 2), CO(c, "screen.line", 3), CO(d, "screen.line", 4), CA(col, "screen.line", 5)),
+      grect: (x, y, w, h, c) => { x = CO(x, "screen.rect", 1); y = CO(y, "screen.rect", 2); w = CO(w, "screen.rect", 3); h = CO(h, "screen.rect", 4); const cl = CA(c, "screen.rect", 5); if (w > 0 && h > 0) grect(x, y, w, h, cl); },
+      gfrect: (x, y, w, h, c) => { x = CO(x, "screen.fill_rect", 1); y = CO(y, "screen.fill_rect", 2); w = CO(w, "screen.fill_rect", 3); h = CO(h, "screen.fill_rect", 4); const cl = CA(c, "screen.fill_rect", 5); if (w > 0 && h > 0) gfill(x, y, w, h, cl); },
+      grrect: (x, y, w, h, r, c) => grrect(CO(x, "screen.round_rect", 1), CO(y, "screen.round_rect", 2), CO(w, "screen.round_rect", 3), CO(h, "screen.round_rect", 4), Q(N(r, "screen.round_rect", 5), 0, 200), 0, CA(c, "screen.round_rect", 6)),
+      gfrrect: (x, y, w, h, r, c) => grrect(CO(x, "screen.fill_round_rect", 1), CO(y, "screen.fill_round_rect", 2), CO(w, "screen.fill_round_rect", 3), CO(h, "screen.fill_round_rect", 4), Q(N(r, "screen.fill_round_rect", 5), 0, 200), 1, CA(c, "screen.fill_round_rect", 6)),
+      gcirc: (x, y, r, c) => gcirc(CO(x, "screen.circle", 1), CO(y, "screen.circle", 2), Q(N(r, "screen.circle", 3), 0, 400), 0, CA(c, "screen.circle", 4)),
+      gfcirc: (x, y, r, c) => gcirc(CO(x, "screen.fill_circle", 1), CO(y, "screen.fill_circle", 2), Q(N(r, "screen.fill_circle", 3), 0, 400), 1, CA(c, "screen.fill_circle", 4)),
+      gtri: (a, b, c, d, e, f, col) => gtri(CO(a, "screen.triangle", 1), CO(b, "screen.triangle", 2), CO(c, "screen.triangle", 3), CO(d, "screen.triangle", 4), CO(e, "screen.triangle", 5), CO(f, "screen.triangle", 6), CA(col, "screen.triangle", 7), 0),
+      gftri: (a, b, c, d, e, f, col) => gtri(CO(a, "screen.fill_triangle", 1), CO(b, "screen.fill_triangle", 2), CO(c, "screen.fill_triangle", 3), CO(d, "screen.fill_triangle", 4), CO(e, "screen.fill_triangle", 5), CO(f, "screen.fill_triangle", 6), CA(col, "screen.fill_triangle", 7), 1),
+      ggrad: (x, y, w, h, a, b, vert) => {
+        x = CO(x, "screen.gradient", 1); y = CO(y, "screen.gradient", 2); w = CO(w, "screen.gradient", 3); h = CO(h, "screen.gradient", 4);
+        a = NI(a, "screen.gradient", 5); b = NI(b, "screen.gradient", 6);
+        if (a < 0 || a > 0xFFFFFF) throw argErr("screen.gradient", 5, "color must be 0..0xFFFFFF"); if (b < 0 || b > 0xFFFFFF) throw argErr("screen.gradient", 6, "color must be 0..0xFFFFFF");
+        const v = vert === undefined || vert === null || vert !== false; if (w <= 0 || h <= 0) return;
+        const n = v ? h : w;
+        for (let i = 0; i < n; i++) {
+          const t = n > 1 ? Math.floor(i * 255 / (n - 1)) : 0, ch = s => Math.floor((((a >> s) & 255) * (255 - t) + ((b >> s) & 255) * t) / 255);
+          const c = c565((ch(16) << 16) | (ch(8) << 8) | ch(0)); if (v) gfill(x, y + i, w, 1, c); else gfill(x + i, y, 1, h, c);
+        }
+      },
+      ptr: i => { ptrReq = performance.now(); return i === 1 ? ptrDownApp : i === 2 ? ptrX : ptrY; },   // input.touch: koordinat sentuhan real-time
       touch: p => { p = N(p, "input.touch", 1); if (!(p >= 1 && p <= 4)) throw argErr("input.touch", 1, "pad must be 1..4"); return padDown[p - 1]; },
       sw: () => swDown, millis: () => Math.floor(performance.now() - t0) >>> 0,
       sget: k => { k = Key(k, "storage.get"); return Object.prototype.hasOwnProperty.call(store, k) ? store[k].v : undefined; },
@@ -2644,7 +2813,7 @@ function __gc() collect(); collect() end
       if (/unreachable|memory access out of bounds|^abort|RuntimeError/i.test(m)) return "mesin Lua simulator berhenti tak terduga (" + m + "); biasanya akibat memori habis atau rekursi terlalu dalam";
       return m; };
     function stop(quiet) {
-      runId++; loader.abort(); running = false; disp = null; gcFn = null; kbOpen = false; kb = null; kbPend = null; clearTimeout(swTimer); cancelAnimationFrame(raf);
+      runId++; loader.abort(); running = false; disp = null; hasPtrCb = false; ptrDownApp = false; ptrReq = -1e9; gcFn = null; kbOpen = false; kb = null; kbPend = null; clearTimeout(swTimer); cancelAnimationFrame(raf);
       if (eng) { try { eng.global.close(); } catch (e) {} eng = null; }
       ledAuto(); if (!quiet) setState("Berhenti");
     }
@@ -2684,7 +2853,8 @@ function __gc() collect(); collect() end
         disp = dsp; running = true; t0 = lastAct = fT0 = performance.now(); keeps = 0; fN = 0; fMs = 0; G.last = -1;
         runner(code);
         if (typeof eng.global.get("draw") !== "function") throw new Error("draw() tidak ditemukan");
-        const cbs = ["on_touch", "on_sw", "on_swipe", "on_encoder", "on_text"].filter(n => typeof eng.global.get(n) === "function");
+        const cbs = ["on_touch", "on_sw", "on_swipe", "on_encoder", "on_text", "on_pointer"].filter(n => typeof eng.global.get(n) === "function");
+        hasPtrCb = cbs.includes("on_pointer");
         loader.set(98); await loader.done();
         if (my !== runId) return;
         say(`▶ ${$("name").value.trim() || "Program"} berjalan. Callback: draw${cbs.length ? ", " + cbs.join(", ") : ""}.`);
@@ -2696,9 +2866,8 @@ function __gc() collect(); collect() end
       raf = requestAnimationFrame(frame);
       if (ts - lastF < 33) return;
       lastF = ts;
-      if (kbOpen) { kbDraw(); blit(); return; }   // keyboard terbuka: layar program dijeda, tampilkan keyboard virtual
-      fb.fill(0);
-      text(2, 2, $("name").value.trim()); hl(0, 10, W);   // appLuaDraw(): nama aplikasi + garis header, lalu draw()
+      if (kbOpen) { kbDraw(); blitKb(); return; }   // keyboard terbuka: layar program dijeda, tampilkan keyboard virtual
+      appBegin();   // appLuaDraw(): latar + bar judul sistem, lalu draw()
       if ($("simDev").checked && ts - lastAct > 120000) { say("Tidak ada interaksi 120 dtk: program ditutup (panggil app.keep_alive() agar tetap berjalan)."); stop(); return; }
       const t1 = performance.now();
       try { if (call("draw") === false) throw new Error("draw() tidak ditemukan"); } catch (e) { fail(e); return; }
@@ -3345,8 +3514,6 @@ function __gc() collect(); collect() end
     const first = an.diags.find(d => d.sev === "error");
     const warns = an.diags.filter(d => d.sev === "warning").length;
     const devName = v.name.replace(/[^A-Za-z0-9 ]/g, "").slice(0, 15);
-    const vi = versionIssue(facesData, v.id, v.name, v.version);
-    const verNote = vi ? `<li class="bad">✗ ${esc(vi)}</li>` : "";
     const checks = [
       { ok: /^[A-Za-z0-9_-]{1,24}$/.test(v.id), msg: v.id ? "ID: huruf, angka, _ atau -, maksimum 24 karakter." : "ID unik wajib diisi.", good: "ID valid." },
       { ok: FACE.TAGS.includes(v.tag), msg: "Kategori tidak valid.", good: "Kategori valid." },
@@ -3360,10 +3527,10 @@ function __gc() collect(); collect() end
     const extra = an.diags.filter(d => d !== first).slice(0, 15).map(d =>
       `<li class="${d.sev === "error" ? "bad" : "warn"}">${d.sev === "error" ? "✗" : "⚠"} Baris ${d.line}, kolom ${d.col}: ${esc(d.msg)}</li>`).join("");
     const nameNote = v.name && devName !== v.name ? `<li class="warn">⚠ Di jam nama dikirim sebagai "${esc(devName)}" (hanya huruf/angka/spasi, maks 15 karakter).</li>` : "";
-    $("fChecks").innerHTML = checks.filter((c, i) => !c.ok || i === 5).map(c => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.ok ? c.good : c.msg)}</li>`).join("") + verNote + nameNote + extra;
+    $("fChecks").innerHTML = checks.filter((c, i) => !c.ok || i === 5).map(c => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.ok ? c.good : c.msg)}</li>`).join("") + nameNote + extra;
     $("fCanon").value = an.canon;
     const ok = checks.every(c => c.ok);
-    $("fUpload").disabled = !ok || !!vi || fBusy;
+    $("fUpload").disabled = !ok || fBusy;
     $("fZip").disabled = !ok;
     return { ok, record: ok ? { id: v.id, name: v.name, tag: v.tag, version: v.version, description: v.description, dsl: an.canon } : null };
   }
@@ -3481,14 +3648,13 @@ function __gc() collect(); collect() end
       const nameMatch = nameMatches[0] || null;
       if (idMatch && idMatch[1] && idMatch[1].name === record.name) {
         const existing = idMatch[1];
-        const vIssue = versionIssue(facesData, record.id, record.name, record.version);
-        if (vIssue) {
-          window.mgToast(vIssue, "bad", 7000);
-          fStatus(vIssue, true);
-          return;
-        }
         const confirmed = await confirmUpdate(`Watch face "${record.name}" (${record.id}) sudah ada di RTDB. Ganti versi ${existing.version || "tidak diketahui"} dengan ${record.version}?`);
         if (!confirmed) return;
+        if (String(existing.version || "") === record.version) {
+          window.mgToast(`Versi "${record.version}" sama dengan versi yang sudah ada. Naikkan versi dulu; isi pekerjaanmu tetap tersimpan.`, "bad", 7000);
+          fStatus("Versi belum berubah.", true);
+          return;
+        }
       } else if (idMatch || nameMatch) {
         const conflicts = new Map();
         if (idMatch) conflicts.set(idMatch[0], idMatch[1]);
