@@ -1,6 +1,6 @@
 # Panduan Lua untuk Aplikasi VynWatch
 
-Program Apps dan Games yang diunduh dijalankan di firmware ESP32 menggunakan Lua 5.4. Ini Lua yang dibatasi agar sesuai dengan VynWatch, bukan akses Lua penuh ke perangkat. Seluruh akses perangkat melewati Device API berlapis (lihat [Arsitektur tiga lapisan dan Device API](#arsitektur-tiga-lapisan-dan-device-api)). Program dapat menggambar pada OLED, membaca input perangkat, membaca sensor gerak, baterai, suhu chip, dan waktu, mengontrol LED RGB, membaca tingkat suara mikrofon, meminta pengguna mengetik teks lewat keyboard virtual, mengeluarkan bunyi buzzer, menyimpan state sementara maupun data persisten per aplikasi/game di NVS, dan menangani callback input.
+Program Apps dan Games yang diunduh dijalankan di firmware ESP32 menggunakan Lua 5.4. Ini Lua yang dibatasi agar sesuai dengan VynWatch, bukan akses Lua penuh ke perangkat. Seluruh akses perangkat melewati Device API berlapis (lihat [Arsitektur tiga lapisan dan Device API](#arsitektur-tiga-lapisan-dan-device-api)). Program dapat menggambar pada layar LCD berwarna (koordinat piksel atau posisi relatif), membaca input perangkat, membaca sensor gerak, baterai, suhu chip, dan waktu, mengontrol LED RGB, membaca tingkat suara mikrofon, meminta pengguna mengetik teks lewat keyboard virtual, mengeluarkan bunyi buzzer, menyimpan state sementara maupun data persisten per aplikasi/game di NVS, dan menangani callback input.
 
 ## Membuat paket aplikasi/game
 
@@ -101,7 +101,7 @@ Kategori API:
 | Aktuator (perintah) | LED RGB, buzzer | `vyn.request` dengan params |
 | Event input | `on_touch`, `on_sw`, `on_swipe`, `on_encoder`, `on_text` | callback (format sudah kanonik) |
 | Layanan platform | `storage`, `keyboard.request`, `app.keep_alive`, metadata `app` | tabel masing-masing; bukan data hardware |
-| Permukaan gambar | `screen.*` (kanvas monokrom tetap 128x64) | tabel `screen`; ukuran juga ada di `device.info` |
+| Permukaan gambar | `screen.*` (kanvas warna 320x216; posisi berupa piksel atau ekspresi relatif) | tabel `screen`; ukuran juga ada di `device.info` |
 
 ### `vyn.request(resource [, params])`
 
@@ -177,30 +177,152 @@ Menambah resource baru berarti: (1) tambah entri di tabel skema `src/vyn_api.cpp
 
 ## API perangkat
 
-### Layar OLED
+### Layar LCD dan sistem posisi
 
-Resolusi layar adalah 128×64 piksel. Area y=0..10 dipakai judul aplikasi dan garis header firmware; gambar aplikasi sebaiknya menggunakan y=12..63. Koordinat dan ukuran dibatasi firmware ke area layar.
+Area gambar aplikasi adalah **320×216 piksel** berwarna (RGB). Di atasnya ada bar judul sistem setinggi 24 piksel (nama aplikasi dan tombol tutup) yang digambar firmware; koordinat `(0, 0)` Lua berada tepat di bawah bar itu. Semua yang berada di luar area dipotong. Warna berupa bilangan bulat `0xRRGGBB` (lihat `screen.rgb` dan `screen.hsv`); bila argumen warna dihilangkan dipakai warna pena (`screen.color`, default putih di awal tiap frame).
+
+#### Dua cara menentukan posisi dan ukuran
+
+Setiap argumen **posisi atau ukuran** (x, y, lebar, tinggi, radius, ujung garis/segitiga) menerima salah satu dari:
+
+1. **Angka**: piksel absolut seperti biasa. Pecahan dibulatkan ke piksel terdekat (`12.5` menjadi `13`). Nilai dijepit ke -2000..2000.
+2. **String ekspresi relatif**: posisi dihitung dari ukuran layar atau elemen lain. Program tetap benar bila ukuran layar berubah.
+
+Kedua bentuk bisa dicampur dalam satu panggilan:
+
+```lua
+screen.rect(10, "50%", "100%-20", 30)    -- x absolut, y 50% tinggi, lebar = layar dikurangi 20 px
+```
+
+#### Sintaks ekspresi
+
+Ekspresi adalah jumlah atau selisih beberapa **suku**, misalnya `"100%-8"` atau `"50% + @judul.h + 4"`. Spasi boleh dipakai, tanda `+`/`-` di depan suku pertama boleh.
+
+| Suku | Arti |
+|---|---|
+| `12`, `12.5`, `12px` | Piksel. Sufiks `px` opsional. |
+| `50%` | Persen dari panjang sumbu argumen itu: argumen x dan lebar memakai lebar layar (320), argumen y dan tinggi memakai tinggi area (216), radius memakai sisi layar terpendek (216). |
+| `50%w`, `50%h` | Memaksa persen dari lebar atau tinggi layar, apa pun posisi argumennya. Berguna untuk tinggi yang sebanding dengan lebar, misalnya kotak persegi: `screen.rect(10, 10, "30%w", "30%w")`. |
+| `50%@kartu.w` | Persen dari satu properti elemen lain. |
+| `@kartu.right` | Nilai satu properti elemen lain. |
+
+Properti elemen (`@nama.properti`):
+
+| Properti | Isi |
+|---|---|
+| `left` atau `x` | Tepi kiri. |
+| `top` atau `y` | Tepi atas. |
+| `right` | Tepi kanan (`x + w`). |
+| `bottom` | Tepi bawah (`y + h`). |
+| `w` atau `width` | Lebar. |
+| `h` atau `height` | Tinggi. |
+| `cx`, `cy` | Titik tengah horizontal dan vertikal. |
+
+Elemen yang bisa diacu:
+
+| Nama | Isi |
+|---|---|
+| `screen` | Seluruh area gambar: `0, 0, 320, 216`. |
+| `prev` | Elemen yang **terakhir digambar** pada frame ini (awal frame = seluruh layar). |
+| nama buatan | Elemen yang diberi nama lewat `screen.name(...)` atau didaftarkan lewat `screen.mark(...)`. |
+
+Kotak elemen untuk tiap bentuk: `rect`, `fill_rect`, `round_rect`, `fill_round_rect`, dan `gradient` memakai kotaknya sendiri; `text` memakai kotak teks (lebar `huruf × 6 × ukuran`, tinggi `8 × ukuran`); `circle` dan `fill_circle` memakai kotak pembatas (`2r + 1`); `line`, `triangle`, dan `fill_triangle` memakai kotak pembatas titiknya; `pixel` memakai kotak 1×1. Elemen bernama dan `prev` **dimulai ulang tiap frame**, jadi hanya bisa diacu setelah digambar pada frame yang sama (tidak ada acuan ke depan).
+
+Ekspresi yang salah (misalnya `"50%x"`, elemen belum ada, properti tidak dikenal) menghentikan aplikasi dengan pesan runtime error yang menyebut nomor argumennya.
+
+#### Perataan titik acuan: `screen.align`
+
+Secara bawaan `(x, y)` adalah pojok kiri-atas. `screen.align` mengubah arti `(x, y)` menjadi titik acuan lain pada bentuk, sehingga elemen bisa ditengahkan atau dirapatkan ke tepi tanpa menghitung lebarnya:
+
+```lua
+screen.align(horizontal [, vertical])
+```
+
+| Nilai | Arti |
+|---|---|
+| `"left"`, `"center"`, `"right"` | Titik acuan horizontal: tepi kiri, tengah, tepi kanan. |
+| `"top"`, `"middle"`, `"bottom"` | Titik acuan vertikal: tepi atas, tengah, tepi bawah. |
+
+Kedua argumen boleh ditulis dalam urutan apa saja, dan satu argumen cukup untuk mengubah satu sumbu (sumbu yang tidak disebut tidak berubah), misalnya `screen.align("bottom")`. `screen.align()` tanpa argumen mengembalikan ke `"left"` dan `"top"`. Perataan berlaku untuk `text`, `rect`, `fill_rect`, `round_rect`, `fill_round_rect`, dan `gradient` sampai dipanggil lagi atau frame berakhir (otomatis direset di awal tiap `draw()`). `circle` dan `fill_circle` selalu berpusat di `(x, y)`; `line`, `triangle`, dan `pixel` tidak terpengaruh.
+
+```lua
+screen.align("center", "middle")
+screen.fill_round_rect("50%", "50%", "60%", "30%", 12, screen.rgb(40, 120, 200))   -- kotak di tengah layar
+screen.text("50%", "50%", "OK", screen.rgb(255, 255, 255), 2)                      -- teks tepat di tengah kotak
+```
+
+#### Memberi nama dan mengacu elemen
 
 | Fungsi | Penggunaan |
 |---|---|
-| `screen.text(x, y, text)` | Menulis teks putih, maksimal 120 byte ASCII. Byte non-ASCII diabaikan. |
-| `screen.line(x1, y1, x2, y2)` | Menggambar garis putih. |
-| `screen.rect(x, y, width, height)` | Menggambar persegi panjang tanpa isi. |
-| `screen.fill_rect(x, y, width, height)` | Menggambar persegi panjang terisi. |
-| `screen.circle(x, y, radius)` | Menggambar lingkaran tanpa isi. |
-| `screen.fill_circle(x, y, radius)` | Menggambar lingkaran terisi. |
-| `screen.width()` | Menghasilkan `128`. |
-| `screen.height()` | Menghasilkan `64`. |
+| `screen.name(id)` | Memberi nama pada elemen yang **baru saja digambar** supaya bisa diacu `@id.properti`. |
+| `screen.mark(id, x, y, w, h)` | Mendaftarkan sebuah area **tanpa menggambar** (mis. kolom layout). Posisi dan ukuran boleh berupa ekspresi; `screen.align` tidak dipakai. |
+| `screen.rel(ekspresi [, sumbu])` | Menghitung ekspresi menjadi bilangan bulat piksel. `sumbu` adalah `"x"` (default), `"y"`, atau `"r"`; menentukan basis `%`. |
+| `screen.box(id)` | Menghasilkan empat angka `x, y, w, h` dari `"screen"`, `"prev"`, atau elemen bernama. |
+| `screen.text_width(teks [, ukuran])` | Lebar teks dalam piksel (tinggi huruf = `8 × ukuran`). |
 
-Contoh:
+Nama berisi 1-12 karakter (huruf, angka, `_`), maksimal 16 nama bersamaan; nama `screen` dan `prev` dicadangkan. Memberi nama yang sama lagi menimpa elemen sebelumnya.
+
+```lua
+function draw()
+  screen.clear(screen.rgb(10, 12, 24))
+
+  -- Header: lebar penuh dikurangi margin 4% di kiri dan kanan
+  screen.fill_round_rect("4%", "3%", "92%", "14%", 8, screen.rgb(30, 60, 140))
+  screen.name("header")
+
+  -- Teks di tengah header
+  screen.align("center", "middle")
+  screen.text("50%", "@header.cy", "DASHBOARD", screen.rgb(255, 255, 255), 2)
+
+  -- Dua kartu berdampingan di bawah header, jarak 4% dari tepi dan antar kartu
+  screen.align("left", "top")
+  screen.fill_round_rect("4%", "@header.bottom+8", "44%", "50%", 8, screen.rgb(40, 40, 60))
+  screen.name("kiri")
+  screen.fill_round_rect("@kiri.right+4%", "@kiri.top", "@kiri.w", "@kiri.h", 8, screen.rgb(40, 40, 60))
+
+  -- Status di pojok kanan-bawah, 8 px dari tepi
+  screen.align("right", "bottom")
+  screen.text("100%-8", "100%-8", "v1.0", screen.rgb(150, 150, 150))
+end
+```
+
+#### Fungsi gambar
+
+| Fungsi | Penggunaan |
+|---|---|
+| `screen.text(x, y, teks [, warna [, ukuran]])` | Menulis teks ASCII, maksimal 120 karakter. Font 6×8 piksel dikali `ukuran` 1..4 (default 1). Byte non-ASCII diabaikan. |
+| `screen.line(x1, y1, x2, y2 [, warna])` | Menggambar garis. |
+| `screen.pixel(x, y [, warna])` | Menggambar satu piksel. |
+| `screen.rect(x, y, w, h [, warna])` | Persegi panjang tanpa isi (diabaikan bila `w` atau `h` ≤ 0). |
+| `screen.fill_rect(x, y, w, h [, warna])` | Persegi panjang terisi. |
+| `screen.round_rect(x, y, w, h, r [, warna])` | Persegi panjang bersudut membulat tanpa isi; `r` dibatasi setengah sisi terpendek. |
+| `screen.fill_round_rect(x, y, w, h, r [, warna])` | Versi terisi. |
+| `screen.circle(x, y, r [, warna])` | Lingkaran tanpa isi; `(x, y)` adalah pusat. |
+| `screen.fill_circle(x, y, r [, warna])` | Lingkaran terisi. |
+| `screen.triangle(x1, y1, x2, y2, x3, y3 [, warna])` | Segitiga tanpa isi. |
+| `screen.fill_triangle(x1, y1, x2, y2, x3, y3 [, warna])` | Segitiga terisi. |
+| `screen.gradient(x, y, w, h, warna1, warna2 [, vertikal])` | Gradasi linear dari `warna1` ke `warna2`; vertikal (atas ke bawah) bila `vertikal` dihilangkan atau `true`, horizontal bila `false`. |
+| `screen.clear([warna])` | Mengisi seluruh area (default hitam). |
+| `screen.color(warna)` | Menetapkan warna pena. |
+| `screen.rgb(r, g, b)` | Menghasilkan warna dari komponen 0..255. |
+| `screen.hsv(h, s, v)` | Menghasilkan warna dari `h` 0..359, `s` dan `v` 0..100. |
+| `screen.width()` | Menghasilkan `320`. |
+| `screen.height()` | Menghasilkan `216`. |
+
+Argumen warna adalah bilangan bulat `0xRRGGBB` dan bukan posisi, jadi tidak menerima ekspresi. Radius `r` pada `round_rect` dan `circle` menerima ekspresi (persen dihitung dari sisi layar terpendek); ukuran huruf `ukuran` tetap bilangan bulat 1..4.
+
+Contoh koordinat absolut (tetap berlaku dan tidak berubah):
 
 ```lua
 screen.rect(8, 24, 112, 28)
 screen.fill_circle(64, 38, 5)
-screen.text(14, 58, "OLED 128x64")
+screen.text(14, 58, "Halo", screen.rgb(255, 220, 90), 2)
 ```
 
-Semua operasi gambar berwarna putih. Tidak ada buffer gambar pribadi atau akses piksel arbitrer dari Lua.
+Kapan memakai yang mana: koordinat absolut cocok untuk gambar piksel yang presisi (sprite, grid permainan, tata letak tetap). Posisi relatif cocok untuk antarmuka (header, kartu, tombol, teks tengah, status di sudut) karena tata letaknya mengikuti ukuran layar dan elemen di sekitarnya, dan tidak perlu menghitung ulang bila Anda mengubah satu ukuran.
+
+Tidak ada buffer gambar pribadi atau akses piksel arbitrer dari Lua.
 
 ### Input
 
