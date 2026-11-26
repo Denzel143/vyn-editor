@@ -99,7 +99,7 @@ Kategori API:
 |---|---|---|
 | Data hardware (baca) | gerak, baterai, suhu, waktu, tingkat suara, status pad/SW, uptime | `vyn.request` |
 | Aktuator (perintah) | LED RGB, buzzer | `vyn.request` dengan params |
-| Event input | `on_touch`, `on_sw`, `on_swipe`, `on_encoder`, `on_text` | callback (format sudah kanonik) |
+| Event input | `on_touch`, `on_sw`, `on_swipe`, `on_encoder`, `on_text`, `on_pointer` | callback (format sudah kanonik) |
 | Layanan platform | `storage`, `keyboard.request`, `app.keep_alive`, metadata `app` | tabel masing-masing; bukan data hardware |
 | Permukaan gambar | `screen.*` (kanvas warna 320x216; posisi berupa piksel atau ekspresi relatif) | tabel `screen`; ukuran juga ada di `device.info` |
 
@@ -340,6 +340,7 @@ Callback input bersifat opsional:
 | `on_sw(pressed)` | Boolean | Dipanggil saat SW ditekan (`true`) dan dilepas (`false`) selama aplikasi masih berjalan. Menahan SW tidak lagi keluar dari aplikasi: tahan SW bebas dipakai aplikasi (lihat di bawah untuk pewaktuan klik dan tahan). Jika aplikasi keluar saat SW masih ditekan, callback release dikirim lebih dulu. |
 | `on_swipe(direction)` | `"left"` atau `"right"` | Dipanggil saat firmware mendeteksi gesture swipe yang valid. Gesture turun dipetakan ke `"right"` dan gesture naik ke `"left"` oleh pemetaan pad firmware. |
 | `on_encoder(step)` | Integer `+1` atau `-1` | Dipanggil sekali untuk setiap langkah encoder. Putaran cepat dikirim sebagai beberapa callback langkah, bukan satu delta besar. |
+| `on_pointer(state, x, y)` | `"down"`/`"move"`/`"up"` dan koordinat | Sentuhan layar mentah; lihat [Layar sentuh](#layar-sentuh-koordinat-jari). |
 | `on_text(text, submitted)` | String dan boolean | Hasil `keyboard.request()`: dipanggil sekali setelah pengguna menutup keyboard virtual. Lihat bagian [Keyboard virtual](#keyboard-virtual-input-teks). |
 
 Callback input tidak menerima klik tunggal/ganda atau event hold. Touch callback melaporkan transisi kontak yang sudah distabilkan, sehingga satu gerakan swipe dapat memicu transisi sentuh dan callback swipe. Tahan SW bebas dipakai aplikasi dan tidak lagi mengeluarkan aplikasi. Firmware menunggu ±500 ms setelah SW ditekan untuk membedakan screenshot, sehingga klik singkat dikirim sebagai `on_sw(true)` lalu `on_sw(false)` berurutan saat SW dilepas, sedangkan SW yang ditahan ≥ 500 ms mengirim `on_sw(true)` pada saat itu dan `on_sw(false)` saat dilepas. Aplikasi dapat mengukur lama tahan dari selisih waktu kedua callback (misalnya dengan penghitung frame di `draw()`).
@@ -356,6 +357,73 @@ Contoh membaca status saat menggambar:
 function draw()
   screen.text(4, 24, input.touch(1) and "PAD 1 DOWN" or "PAD 1 UP")
   screen.text(4, 40, input.sw() and "SW DOWN" or "SW UP")
+end
+```
+
+### Layar sentuh (koordinat jari)
+
+Aplikasi dapat menerima koordinat jari di layar LCD. Ada dua cara, dan memakai salah satunya sudah cukup untuk mengaktifkan **mode pointer**:
+
+| Cara | Penggunaan |
+|---|---|
+| `on_pointer(state, x, y)` | Callback event. Cukup mendefinisikan fungsi ini agar mode pointer aktif. |
+| `input.pointer()` | Polling di `draw()`. Menghasilkan tiga nilai `down, x, y`, atau `nil` bila layar sentuh tidak ada. Memanggilnya menyalakan mode pointer selama ±1,5 detik sejak panggilan terakhir. |
+
+Argumen `on_pointer`:
+
+| Argumen | Isi |
+|---|---|
+| `state` | `"down"` saat jari menyentuh, `"move"` saat posisinya berubah, `"up"` saat jari diangkat. |
+| `x`, `y` | Koordinat piksel di **area aplikasi**: `x` 0..319, `y` 0..215. Titik `(0, 0)` berada tepat di bawah bar judul sistem, sama dengan koordinat `screen.*`. Pada `"up"` yang dikirim adalah posisi terakhir jari. |
+
+Di mode pointer, layar **tidak lagi berperan sebagai SW dan pad touch**: ketuk tidak menjadi klik SW, tahan tidak menjadi tahan SW, seret vertikal tidak menjadi `on_encoder`, dan usap horizontal tidak menjadi `on_swipe`. Seluruh sentuhan di area aplikasi dikirim apa adanya sebagai koordinat dan status tekan. Hal yang tetap dimiliki sistem:
+
+- Bar judul (24 px teratas): mengetuk tombol x di kanan membuka dialog Suspend/Close.
+- Pad touch fisik, tombol SW fisik, dan encoder fisik tetap mengirim `on_touch`, `on_sw`, `on_swipe`, dan `on_encoder` seperti biasa.
+- Handle navigasi sistem dan keyboard virtual tetap menang atas aplikasi.
+
+Aplikasi yang tidak memakai `on_pointer` maupun `input.pointer()` berperilaku seperti sebelumnya (ketuk = SW, seret = encoder, usap = swipe).
+
+`"move"` hanya dikirim bila koordinat berubah dibanding event sebelumnya.
+
+Contoh menggambar titik di bawah jari dan tombol yang bisa ditekan, dengan hit-test memakai posisi relatif:
+
+```lua
+local px, py, down = 0, 0, false
+local pressed = 0
+
+function draw()
+  screen.clear(screen.rgb(10, 12, 24))
+
+  -- Tombol di tengah; kotaknya diberi nama agar bisa dipakai untuk hit-test
+  screen.align("center", "middle")
+  screen.fill_round_rect("50%", "50%", "40%", "20%", 10, screen.rgb(40, 120, 200))
+  screen.name("tombol")
+  local bx, by, bw, bh = screen.box("tombol")
+  screen.text("50%", "50%", "Ditekan: " .. pressed, screen.rgb(255, 255, 255))
+
+  if down then
+    screen.fill_circle(px, py, 6, screen.rgb(255, 220, 90))
+    if px >= bx and px < bx + bw and py >= by and py < by + bh then
+      screen.align("center", "top")
+      screen.text("50%", "@tombol.bottom+8", "di dalam tombol", screen.rgb(120, 255, 160))
+    end
+  end
+end
+
+function on_pointer(state, x, y)
+  px, py = x, y
+  down = state ~= "up"
+  if state == "down" then pressed = pressed + 1 end
+end
+```
+
+Polling tanpa callback:
+
+```lua
+function draw()
+  local down, x, y = input.pointer()
+  if down then screen.fill_circle(x, y, 5) end
 end
 ```
 
