@@ -996,6 +996,7 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
   const $ = (id) => document.getElementById(id);
   const status = (text, error = false) => {
     $("status").textContent = text;
+    $("status").style.whiteSpace = "pre-line";
     $("status").style.color = error ? "var(--warn)" : "var(--accent)";
   };
   const confirmUpdate = message => new Promise(resolve => {
@@ -1822,7 +1823,9 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
     if (!code.trim()) return { ok: false, msg: "Program Lua kosong.", diags: [] };
     const bytes = new TextEncoder().encode(code).length;
     if (bytes > 16384) return { ok: false, msg: `Ukuran ${bytes} B melebihi batas 16384 B (16 KiB).`, diags: [] };
-    const diags = LuaCheck.analyze(code).diags;
+    let diags;
+    try { diags = LuaCheck.analyze(code).diags; }
+    catch (e) { return { ok: false, msg: `Verifikator gagal memproses kode: ${e && e.message ? e.message : e}`, diags: [] }; }
     const first = diags.find(d => d.sev === "error");
     if (first) return { ok: false, msg: `Baris ${first.line}, kolom ${first.col}: ${first.msg}`, first, diags };
     const w = diags.length;
@@ -1875,7 +1878,8 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
     const ok = checks.every(c => c.ok);
     $("upload").disabled = !ok || busy;
     $("aZip").disabled = !ok;
-    return { ok, record: ok ? { id: v.id, name: v.name, type: v.type, version: v.version, thumbnail: th.value, description: v.description, code } : null };
+    const errors = checks.filter(c => !c.ok).map(c => c.msg);
+    return { ok, errors, record: ok ? { id: v.id, name: v.name, type: v.type, version: v.version, thumbnail: th.value, description: v.description, code } : null };
   }
 
   let timer;
@@ -1951,8 +1955,8 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
 
   // ===== Unduh paket ZIP (app/game): format sama dengan impor =====
   $("aZip").addEventListener("click", async () => {
-    const { ok, record } = validate();
-    if (!ok) { status("Masih ada kolom kosong atau tidak valid.", true); return; }
+    const { ok, record, errors } = validate();
+    if (!ok) { status("Verifikasi gagal:\n• " + errors.join("\n• "), true); return; }
     const zip = new JSZip();
     zip.file("record.json", JSON.stringify(record, null, 2) + "\n");
     zip.file("thumbnail.hex", record.thumbnail + "\n");
@@ -1968,8 +1972,8 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
   // ===== Unggah =====
   $("form").addEventListener("submit", async event => {
     event.preventDefault();
-    const { ok, record } = validate();
-    if (!ok) { status("Masih ada kolom kosong atau tidak valid.", true); return; }
+    const { ok, record, errors } = validate();
+    if (!ok) { status("Verifikasi gagal:\n• " + errors.join("\n• "), true); return; }
     busy = true;
     $("upload").disabled = true;
     try {
@@ -3848,7 +3852,7 @@ function __gc() collect(); collect() end
   } catch (e) { /* tanpa pewarnaan */ }
   fEditor.setValue(FACE_DEFAULT, -1);
 
-  const fStatus = (text, error = false) => { $("fStatus").textContent = text; $("fStatus").style.color = error ? "var(--warn)" : "var(--accent)"; };
+  const fStatus = (text, error = false) => { $("fStatus").textContent = text; $("fStatus").style.whiteSpace = "pre-line"; $("fStatus").style.color = error ? "var(--warn)" : "var(--accent)"; };
   let fBusy = false, fLast = { ops: [], ok: false };
   const pad2 = n => String(n).padStart(2, "0");
   const nowLocalIso = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; };
@@ -3858,7 +3862,9 @@ function __gc() collect(); collect() end
 
   function fValidate() {
     const v = { id: $("fId").value.trim(), tag: $("fTag").value, name: $("fName").value.trim(), version: $("fVersion").value.trim(), description: $("fDesc").value.trim() };
-    const an = FACE.analyze(fEditor.getValue());
+    let an;
+    try { an = FACE.analyze(fEditor.getValue()); }
+    catch (e) { an = { ok: false, diags: [{ sev: "error", line: 1, col: 1, msg: `Verifikator gagal memproses DSL: ${e && e.message ? e.message : e}` }], count: 0, bytes: 0, canon: "" }; }
     fLast = an;
     const first = an.diags.find(d => d.sev === "error");
     const warns = an.diags.filter(d => d.sev === "warning").length;
@@ -3881,7 +3887,8 @@ function __gc() collect(); collect() end
     const ok = checks.every(c => c.ok);
     $("fUpload").disabled = !ok || fBusy;
     $("fZip").disabled = !ok;
-    return { ok, record: ok ? { id: v.id, name: v.name, tag: v.tag, version: v.version, description: v.description, dsl: an.canon } : null };
+    const errors = checks.filter(c => !c.ok).map(c => c.msg);
+    return { ok, errors, record: ok ? { id: v.id, name: v.name, tag: v.tag, version: v.version, description: v.description, dsl: an.canon } : null };
   }
   let fTimer;
   const fSchedule = () => { clearTimeout(fTimer); fTimer = setTimeout(fValidate, 200); };
@@ -3972,8 +3979,8 @@ function __gc() collect(); collect() end
     try { await readFacePackage(file); } catch (err) { fStatus(`Paket ZIP tidak valid: ${err.message}`, true); }
   });
   $("fZip").addEventListener("click", async () => {
-    const { ok, record } = fValidate();
-    if (!ok) { fStatus("Masih ada kolom kosong atau tidak valid.", true); return; }
+    const { ok, record, errors } = fValidate();
+    if (!ok) { fStatus("Verifikasi gagal:\n• " + errors.join("\n• "), true); return; }
     const zip = new JSZip();
     zip.file("record.json", JSON.stringify(record, null, 2) + "\n");
     zip.file("face.dsl", fEditor.getValue().replace(/\r\n?/g, "\n").replace(/\n+$/, "") + "\n");
@@ -3988,8 +3995,8 @@ function __gc() collect(); collect() end
   // ---------- Unggah ----------
   $("fForm").addEventListener("submit", async event => {
     event.preventDefault();
-    const { ok, record } = fValidate();
-    if (!ok) { fStatus("Masih ada kolom kosong atau tidak valid.", true); return; }
+    const { ok, record, errors } = fValidate();
+    if (!ok) { fStatus("Verifikasi gagal:\n• " + errors.join("\n• "), true); return; }
     fBusy = true; $("fUpload").disabled = true;
     try {
       const idMatch = Object.prototype.hasOwnProperty.call(facesData, record.id) ? [record.id, facesData[record.id]] : null;
