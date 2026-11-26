@@ -955,7 +955,7 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
     wrap: true
   });
   // Nilai placeholder awal
-  editor.setValue('function draw()\n  local w, h = screen.width(), screen.height()\n  screen.gradient(0, 0, w, h, screen.rgb(20, 30, 80), screen.rgb(90, 20, 110))\n  screen.text(12, 12, "APLIKASI SAYA", screen.rgb(255, 220, 90), 2)\n  screen.fill_round_rect(12, 50, 140, 40, 10, screen.hsv(180, 80, 95))\nend', -1);
+  editor.setValue('function draw()\n  screen.gradient(0, 0, "100%", "100%", screen.rgb(20, 30, 80), screen.rgb(90, 20, 110))\n  screen.align("center")\n  screen.text("50%", "6%", "APLIKASI SAYA", screen.rgb(255, 220, 90), 2)\n  screen.fill_round_rect("50%", "@prev.bottom+12", "70%", "25%", 10, screen.hsv(180, 80, 95))\n  screen.align("right", "bottom")\n  screen.text("100%-8", "100%-8", "kanan-bawah", screen.rgb(255, 255, 255))\nend', -1);
 
   const firebaseConfig = {
     apiKey: "AIzaSyDDUsSdAov70r3scsG8RA1c6wcajftNF30",
@@ -1109,7 +1109,7 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
   });
 
   // ===== Verifikator =====
-  const DEFAULT_CODE = 'function draw()\n  local w, h = screen.width(), screen.height()\n  screen.gradient(0, 0, w, h, screen.rgb(20, 30, 80), screen.rgb(90, 20, 110))\n  screen.text(12, 12, "APLIKASI SAYA", screen.rgb(255, 220, 90), 2)\n  screen.fill_round_rect(12, 50, 140, 40, 10, screen.hsv(180, 80, 95))\nend';
+  const DEFAULT_CODE = 'function draw()\n  screen.gradient(0, 0, "100%", "100%", screen.rgb(20, 30, 80), screen.rgb(90, 20, 110))\n  screen.align("center")\n  screen.text("50%", "6%", "APLIKASI SAYA", screen.rgb(255, 220, 90), 2)\n  screen.fill_round_rect("50%", "@prev.bottom+12", "70%", "25%", 10, screen.hsv(180, 80, 95))\n  screen.align("right", "bottom")\n  screen.text("100%-8", "100%-8", "kanan-bawah", screen.rgb(255, 255, 255))\nend';
   let busy = false;
 
   // ===== Verifikator Lua offline (Lua 5.4, profil VynWatch) =====
@@ -1125,10 +1125,11 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
 
     // Tanda tangan API: n = angka, s = string, v = nilai string/angka/boolean.
     const API = {
-      // "a|b": a = argumen wajib, b = argumen opsional (boleh dihilangkan / nil). n = bilangan bulat, f = angka (boleh pecahan), c = warna 0xRRGGBB, s = string, v = nilai string/angka/boolean.
-      screen: { width: "", height: "", rgb: "nnn", hsv: "fff", color: "c", clear: "|c", pixel: "nn|c", line: "nnnn|c", rect: "nnnn|c", fill_rect: "nnnn|c",
-                round_rect: "nnnnn|c", fill_round_rect: "nnnnn|c", circle: "nnn|c", fill_circle: "nnn|c", triangle: "nnnnnn|c", fill_triangle: "nnnnnn|c",
-                gradient: "nnnncc|v", text: "nns|cn", text_width: "s|n" },
+      // "a|b": a = argumen wajib, b = argumen opsional (boleh dihilangkan / nil). n = bilangan bulat, f = angka (boleh pecahan), p = posisi/ukuran (angka piksel ATAU string ekspresi relatif: "50%", "100%-8", "@kartu.right+4"), c = warna 0xRRGGBB, s = string, v = nilai string/angka/boolean.
+      screen: { width: "", height: "", rgb: "nnn", hsv: "fff", color: "c", clear: "|c", pixel: "pp|c", line: "pppp|c", rect: "pppp|c", fill_rect: "pppp|c",
+                round_rect: "ppppp|c", fill_round_rect: "ppppp|c", circle: "ppp|c", fill_circle: "ppp|c", triangle: "pppppp|c", fill_triangle: "pppppp|c",
+                gradient: "ppppcc|v", text: "pps|cn", text_width: "s|n",
+                align: "|ss", name: "s", mark: "spppp", rel: "p|s", box: "s" },
       input:  { touch: "n", sw: "", millis: "", pointer: "" },
       storage: { get: "s", set: "sv", remove: "s" },
       sound:  { buzzer: "nn" },
@@ -1327,6 +1328,14 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
         return { kind: "index", base, key, line: t.line, col: t.col };
       }
 
+      // Ekspresi posisi relatif (sintaks sama dengan evalExpr di simulator / app_lua.cpp): suku +/- suku; suku = angka[%[w|h|@nama.prop]|px] | @nama.prop
+      function lintPos(str) {
+        const REF = "@[A-Za-z0-9_]+\\.(?:left|top|right|bottom|x|y|w|h|width|height|cx|cy)";
+        const TERM = `(?:(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:%(?:w|h|${REF})?|px)?|${REF})`;
+        if (str.trim() === "") return "ekspresi posisi kosong";
+        if (!new RegExp(`^\\s*[+-]?\\s*${TERM}(?:\\s*[+-]\\s*${TERM})*\\s*$`).test(str)) return `ekspresi posisi "${str.slice(0, 24)}" tidak valid (contoh: "50%", "100%-8", "@kartu.right+4")`;
+        return null;
+      }
       function checkApiCall(name, spec, args, t) {
         if (name === "keyboard.request") {   // keyboard.request(prompt [, initial [, max_len]]): argumen ke-2 dan ke-3 opsional
           if (!args.length) { add("error", t.line, t.col, "keyboard.request membutuhkan minimal 1 argumen (prompt)"); return; }
@@ -1371,6 +1380,11 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
           if (i >= reqN && nilArg(a)) return;                       // argumen opsional = nil -> default
           if (s === "c" || s === "f") s = "n";
           const label = `argumen ke-${i + 1} ${name}`;
+          if (s === "p") {                                          // posisi: angka (pecahan dibulatkan) atau string ekspresi relatif
+            if (a.kind === "str") { const e = lintPos(a.value); if (e) add("error", a.line || t.line, a.col || t.col, `${label}: ${e}`); }
+            else if (a.kind === "lit" || a.kind === "table" || a.kind === "func") add("error", a.line || t.line, a.col || t.col, `${label} tidak valid (harus angka atau string ekspresi relatif)`);
+            return;
+          }
           const booleanLiteral = s === "v" && a.kind === "lit" && (a.value === "true" || a.value === "false");
           if ((a.kind === "lit" && !booleanLiteral) || a.kind === "table" || a.kind === "func"
               || (s === "s" && a.kind === "num"))
@@ -2033,7 +2047,12 @@ screen = {
   rect = H.grect, fill_rect = H.gfrect, round_rect = H.grrect, fill_round_rect = H.gfrrect,
   circle = H.gcirc, fill_circle = H.gfcirc, triangle = H.gtri, fill_triangle = H.gftri, gradient = H.ggrad,
   text = function(x, y, s, c, sz) H.gtext(x, y, numstr(s), c, sz) end,
-  text_width = function(s, sz) return H.gtw(numstr(s), sz) end }
+  text_width = function(s, sz) return H.gtw(numstr(s), sz) end,
+  align = function(a, b) H.galign(a, b) end,
+  name = function(n) H.gname(numstr(n)) end,
+  mark = function(n, x, y, w, h) H.gmark(numstr(n), x, y, w, h) end,
+  rel = function(e, ax) return H.grel(e, ax) end,
+  box = function(n) n = numstr(n); return H.gbox(n, 1), H.gbox(n, 2), H.gbox(n, 3), H.gbox(n, 4) end }
 storage = {
   get = function(k) k = numstr(k); local v = H.sget(k); if v ~= nil and H.sgett(k) == "f" then v = v + 0.0 end return v end,
   set = function(k, v) local t = type(v); return H.sset(numstr(k), v, t == "number" and mtype(v) or t) end,
@@ -2219,6 +2238,8 @@ function __gc() collect(); collect() end
     const c565 = c => { const R = (c >> 19) & 31, G = (c >> 10) & 63, B = (c >> 3) & 31;
       return (0xFF000000 | (((B << 3) | (B >> 2)) << 16) | (((G << 2) | (G >> 4)) << 8) | ((R << 3) | (R >> 2))) >>> 0; };
     let gpen = c565(0xFFFFFF), gOy = TOP, gLim = AH;
+    // Posisi relatif (cermin app_lua.cpp): elemen bernama, @prev, dan perataan; direset tiap frame di appBegin()
+    let gMarks = new Map(), gPrev = { x: 0, y: 0, w: LW, h: AH }, gAlH = 0, gAlV = 0;
     // ---------- Wallpaper & palet tema (port lcdGenProc / lcdDeriveWall / lcdPal / lcdLerp / lcdDimC dari INO) ----------
     const R565 = (r, g, b) => (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xFF) >> 3)) & 0xFFFF;
     const cl8 = v => { v = Math.trunc(v); return v < 0 ? 0 : v > 255 ? 255 : v; };
@@ -2393,6 +2414,7 @@ function __gc() collect(); collect() end
       gtext(8, 4, $("name").value.trim().slice(0, 20), c565(0x00E5FF), 2);
       gline(296, 6, 308, 18, c565(0xFF2020)); gline(308, 6, 296, 18, c565(0xFF2020));
       gOy = TOP; gLim = AH; gpen = c565(0xFFFFFF);
+      gMarks = new Map(); gPrev = { x: 0, y: 0, w: LW, h: AH }; gAlH = gAlV = 0;   // layoutReset()
     };
     const blit = () => octx.putImageData(img, 0, 0);
     const blitKb = () => blit();   // keyboard digambar langsung 320x240 ke rgbBuf (kbDraw)
@@ -2875,6 +2897,68 @@ function __gc() collect(); collect() end
     const R = (fn, f) => (x, y, w, hh) => rectP(Q(N(x, fn, 1), 0, 127), Q(N(y, fn, 2), 12, 63), Q(N(w, fn, 3), 0, 128), Q(N(hh, fn, 4), 0, 64), f);
     const C = (fn, f) => (x, y, r) => circ(Q(N(x, fn, 1), 0, 127), Q(N(y, fn, 2), 12, 63), Q(N(r, fn, 3), 0, 32), f);
     const CO = (v, fn, i) => Q(N(v, fn, i), -2000, 2000);
+    // ===== POSISI RELATIF (cermin app_lua.cpp: evalExpr / pos / placeBox) =====
+    const isNm = ch => /[A-Za-z0-9_]/.test(ch || "");
+    const boxOf = nm => nm === "screen" ? { x: 0, y: 0, w: LW, h: AH } : nm === "prev" ? gPrev : gMarks.get(nm);
+    const PROPS = { left: b => b.x, x: b => b.x, top: b => b.y, y: b => b.y, right: b => b.x + b.w, bottom: b => b.y + b.h, w: b => b.w, width: b => b.w, h: b => b.h, height: b => b.h, cx: b => b.x + b.w / 2, cy: b => b.y + b.h / 2 };
+    const evalExpr = (str, fn, i, axis) => {
+      const bad = why => argErr(fn, i, why);
+      const axisBase = axis === "x" ? LW : axis === "y" ? AH : Math.min(LW, AH);
+      let p = 0, total = 0, any = false;
+      const ref = () => {                                   // str[p] === "@"
+        let q = ++p; while (isNm(str[p])) p++;
+        const name = str.slice(q, p); if (!name) throw bad("expected element name after '@'");
+        if (str[p] !== ".") throw bad("expected '.property' after @name (left/top/right/bottom/w/h/cx/cy)");
+        q = ++p; while (isNm(str[p])) p++;
+        const b = boxOf(name); if (!b) throw bad("unknown element in @name (draw or screen.name() it first)");
+        const prop = str.slice(q, p); if (!Object.prototype.hasOwnProperty.call(PROPS, prop)) throw bad("unknown property after @name.");
+        return PROPS[prop](b);
+      };
+      for (;;) {
+        while (str[p] === " ") p++;
+        if (p >= str.length) break;
+        let sign = 1;
+        if (any) { if (str[p] === "+") sign = 1; else if (str[p] === "-") sign = -1; else throw bad("expected '+' or '-' between terms"); p++; }
+        else if (str[p] === "+" || str[p] === "-") { sign = str[p] === "-" ? -1 : 1; p++; }
+        while (str[p] === " ") p++;
+        let v = 0;
+        if (str[p] === "@") v = ref();
+        else if (/[0-9.]/.test(str[p] || "")) {
+          const m = /^(?:\d+(?:\.\d*)?|\.\d+)/.exec(str.slice(p));
+          if (!m) throw bad("invalid number in expression");
+          v = Number(m[0]); p += m[0].length;
+          if (str[p] === "%") {
+            p++; let base = axisBase;
+            if (str[p] === "@") base = ref();
+            else if (str[p] === "w" && !isNm(str[p + 1])) { base = LW; p++; }
+            else if (str[p] === "h" && !isNm(str[p + 1])) { base = AH; p++; }
+            v = base * v / 100;
+          } else if (str[p] === "p" && str[p + 1] === "x" && !isNm(str[p + 2])) p += 2;
+        } else throw bad("invalid expression (use numbers, %, +, -, @name.prop)");
+        total += sign * v; any = true;
+      }
+      if (!any) throw bad("empty expression");
+      return total;
+    };
+    const RC = f => Number.isNaN(f) ? 0 : Q(Math.sign(f) * Math.round(Math.abs(f)), -2000, 2000);   // lroundf + constrain(-2000..2000)
+    const PO = (v, fn, i, axis) => {
+      if (typeof v === "string") return RC(evalExpr(v, fn, i, axis));
+      if (typeof v !== "number") throw argErr(fn, i, `number expected, got ${tname(v)}`);
+      return RC(v);
+    };
+    const PX = (v, fn, i) => PO(v, fn, i, "x"), PY = (v, fn, i) => PO(v, fn, i, "y"), PR = (v, fn, i) => PO(v, fn, i, "r");
+    const placeBox = (x, y, w, h) => {
+      if (gAlH === 1) x -= Math.trunc(w / 2); else if (gAlH === 2) x -= w;
+      if (gAlV === 1) y -= Math.trunc(h / 2); else if (gAlV === 2) y -= h;
+      return { x, y, w, h };
+    };
+    const storeMark = (name, b) => {
+      if (name.length < 1 || name.length > 12) throw new Error("element name must be 1..12 characters");
+      if (!/^[A-Za-z0-9_]+$/.test(name)) throw new Error("element name: letters, digits and _ only");
+      if (name === "screen" || name === "prev") throw new Error("element name 'screen'/'prev' is reserved");
+      if (!gMarks.has(name) && gMarks.size >= 16) throw new Error("too many named elements (max 16)");
+      gMarks.set(name, b);
+    };
     const CA = (v, fn, i) => {   // colorArg(): nil = warna pena; selain itu bilangan bulat 0..0xFFFFFF
       if (v === undefined || v === null) return gpen;
       const n = NI(v, fn, i); if (n < 0 || n > 0xFFFFFF) throw argErr(fn, i, "color must be 0..0xFFFFFF (use screen.rgb)"); return c565(n);
@@ -2883,7 +2967,13 @@ function __gc() collect(); collect() end
     const host = () => ({
       appid: $("id").value.trim(), appname: $("name").value.trim(),
       // DISPLAY v2: argumen koordinat dijepit ke ±2000 (seperti coord() di app_lua.cpp); warna opsional = warna pena
-      gtext: (x, y, s, c, sz) => gtext(CO(x, "screen.text", 1), CO(y, "screen.text", 2), Sx(s, "screen.text", 3), CA(c, "screen.text", 4), SZ(sz, "screen.text", 5)),
+      // DISPLAY v2: posisi/ukuran = angka piksel (pecahan dibulatkan) ATAU string ekspresi relatif; dijepit ±2000 seperti pos() di app_lua.cpp
+      gtext: (x, y, s, c, sz) => {
+        const fn = "screen.text"; x = PX(x, fn, 1); y = PY(y, fn, 2);
+        const str = Sx(s, fn, 3), cl = CA(c, fn, 4), size = SZ(sz, fn, 5);
+        let n = 0; for (let i = 0; i < str.length && n < 120; i++) if (str.charCodeAt(i) < 128) n++;
+        const bx = placeBox(x, y, n * 6 * size, 8 * size); gtext(bx.x, bx.y, str, cl, size); gPrev = bx;
+      },
       gtw: (s, sz) => Math.min(Sx(s, "screen.text_width", 1).replace(/[^\x00-\x7F]/g, "").slice(0, 120).length, 120) * 6 * SZ(sz, "screen.text_width", 2),
       grgb: (r, g, b) => { const f = (v, i) => Q(NI(v, "screen.rgb", i), 0, 255); return (f(r, 1) << 16) | (f(g, 2) << 8) | f(b, 3); },
       ghsv: (h, s, v) => {
@@ -2895,27 +2985,64 @@ function __gc() collect(); collect() end
       },
       gcolor: c => { gpen = CA(c, "screen.color", 1); },
       gclear: c => { const n = (c === undefined || c === null) ? 0 : NI(c, "screen.clear", 1); if (n < 0 || n > 0xFFFFFF) throw argErr("screen.clear", 1, "color must be 0..0xFFFFFF"); gfill(0, 0, LW, AH, c565(n)); },
-      gpixel: (x, y, c) => gpx(CO(x, "screen.pixel", 1), CO(y, "screen.pixel", 2), CA(c, "screen.pixel", 3)),
-      gline: (a, b, c, d, col) => gline(CO(a, "screen.line", 1), CO(b, "screen.line", 2), CO(c, "screen.line", 3), CO(d, "screen.line", 4), CA(col, "screen.line", 5)),
-      grect: (x, y, w, h, c) => { x = CO(x, "screen.rect", 1); y = CO(y, "screen.rect", 2); w = CO(w, "screen.rect", 3); h = CO(h, "screen.rect", 4); const cl = CA(c, "screen.rect", 5); if (w > 0 && h > 0) grect(x, y, w, h, cl); },
-      gfrect: (x, y, w, h, c) => { x = CO(x, "screen.fill_rect", 1); y = CO(y, "screen.fill_rect", 2); w = CO(w, "screen.fill_rect", 3); h = CO(h, "screen.fill_rect", 4); const cl = CA(c, "screen.fill_rect", 5); if (w > 0 && h > 0) gfill(x, y, w, h, cl); },
-      grrect: (x, y, w, h, r, c) => grrect(CO(x, "screen.round_rect", 1), CO(y, "screen.round_rect", 2), CO(w, "screen.round_rect", 3), CO(h, "screen.round_rect", 4), Q(N(r, "screen.round_rect", 5), 0, 200), 0, CA(c, "screen.round_rect", 6)),
-      gfrrect: (x, y, w, h, r, c) => grrect(CO(x, "screen.fill_round_rect", 1), CO(y, "screen.fill_round_rect", 2), CO(w, "screen.fill_round_rect", 3), CO(h, "screen.fill_round_rect", 4), Q(N(r, "screen.fill_round_rect", 5), 0, 200), 1, CA(c, "screen.fill_round_rect", 6)),
-      gcirc: (x, y, r, c) => gcirc(CO(x, "screen.circle", 1), CO(y, "screen.circle", 2), Q(N(r, "screen.circle", 3), 0, 400), 0, CA(c, "screen.circle", 4)),
-      gfcirc: (x, y, r, c) => gcirc(CO(x, "screen.fill_circle", 1), CO(y, "screen.fill_circle", 2), Q(N(r, "screen.fill_circle", 3), 0, 400), 1, CA(c, "screen.fill_circle", 4)),
-      gtri: (a, b, c, d, e, f, col) => gtri(CO(a, "screen.triangle", 1), CO(b, "screen.triangle", 2), CO(c, "screen.triangle", 3), CO(d, "screen.triangle", 4), CO(e, "screen.triangle", 5), CO(f, "screen.triangle", 6), CA(col, "screen.triangle", 7), 0),
-      gftri: (a, b, c, d, e, f, col) => gtri(CO(a, "screen.fill_triangle", 1), CO(b, "screen.fill_triangle", 2), CO(c, "screen.fill_triangle", 3), CO(d, "screen.fill_triangle", 4), CO(e, "screen.fill_triangle", 5), CO(f, "screen.fill_triangle", 6), CA(col, "screen.fill_triangle", 7), 1),
+      gpixel: (x, y, c) => { const fn = "screen.pixel"; x = PX(x, fn, 1); y = PY(y, fn, 2); gpx(x, y, CA(c, fn, 3)); gPrev = { x, y, w: 1, h: 1 }; },
+      gline: (a, b, c, d, col) => {
+        const fn = "screen.line"; a = PX(a, fn, 1); b = PY(b, fn, 2); c = PX(c, fn, 3); d = PY(d, fn, 4);
+        gline(a, b, c, d, CA(col, fn, 5)); gPrev = { x: Math.min(a, c), y: Math.min(b, d), w: Math.abs(c - a) + 1, h: Math.abs(d - b) + 1 };
+      },
+      grect: (x, y, w, h, c) => { const fn = "screen.rect"; x = PX(x, fn, 1); y = PY(y, fn, 2); w = PX(w, fn, 3); h = PY(h, fn, 4); const cl = CA(c, fn, 5); if (w > 0 && h > 0) { const bx = placeBox(x, y, w, h); grect(bx.x, bx.y, bx.w, bx.h, cl); gPrev = bx; } },
+      gfrect: (x, y, w, h, c) => { const fn = "screen.fill_rect"; x = PX(x, fn, 1); y = PY(y, fn, 2); w = PX(w, fn, 3); h = PY(h, fn, 4); const cl = CA(c, fn, 5); if (w > 0 && h > 0) { const bx = placeBox(x, y, w, h); gfill(bx.x, bx.y, bx.w, bx.h, cl); gPrev = bx; } },
+      grrect: (x, y, w, h, r, c) => {
+        const fn = "screen.round_rect"; x = PX(x, fn, 1); y = PY(y, fn, 2); w = PX(w, fn, 3); h = PY(h, fn, 4); r = Q(PR(r, fn, 5), 0, 200); const cl = CA(c, fn, 6);
+        if (w > 0 && h > 0) { const bx = placeBox(x, y, w, h); grrect(bx.x, bx.y, bx.w, bx.h, Math.min(r, Math.trunc(Math.min(w, h) / 2)), 0, cl); gPrev = bx; }
+      },
+      gfrrect: (x, y, w, h, r, c) => {
+        const fn = "screen.fill_round_rect"; x = PX(x, fn, 1); y = PY(y, fn, 2); w = PX(w, fn, 3); h = PY(h, fn, 4); r = Q(PR(r, fn, 5), 0, 200); const cl = CA(c, fn, 6);
+        if (w > 0 && h > 0) { const bx = placeBox(x, y, w, h); grrect(bx.x, bx.y, bx.w, bx.h, Math.min(r, Math.trunc(Math.min(w, h) / 2)), 1, cl); gPrev = bx; }
+      },
+      gcirc: (x, y, r, c) => { const fn = "screen.circle"; x = PX(x, fn, 1); y = PY(y, fn, 2); r = Q(PR(r, fn, 3), 0, 400); gcirc(x, y, r, 0, CA(c, fn, 4)); gPrev = { x: x - r, y: y - r, w: 2 * r + 1, h: 2 * r + 1 }; },
+      gfcirc: (x, y, r, c) => { const fn = "screen.fill_circle"; x = PX(x, fn, 1); y = PY(y, fn, 2); r = Q(PR(r, fn, 3), 0, 400); gcirc(x, y, r, 1, CA(c, fn, 4)); gPrev = { x: x - r, y: y - r, w: 2 * r + 1, h: 2 * r + 1 }; },
+      gtri: (a, b, c, d, e, f, col) => {
+        const fn = "screen.triangle"; a = PX(a, fn, 1); b = PY(b, fn, 2); c = PX(c, fn, 3); d = PY(d, fn, 4); e = PX(e, fn, 5); f = PY(f, fn, 6);
+        gtri(a, b, c, d, e, f, CA(col, fn, 7), 0); const lx = Math.min(a, c, e), ly = Math.min(b, d, f); gPrev = { x: lx, y: ly, w: Math.max(a, c, e) - lx + 1, h: Math.max(b, d, f) - ly + 1 };
+      },
+      gftri: (a, b, c, d, e, f, col) => {
+        const fn = "screen.fill_triangle"; a = PX(a, fn, 1); b = PY(b, fn, 2); c = PX(c, fn, 3); d = PY(d, fn, 4); e = PX(e, fn, 5); f = PY(f, fn, 6);
+        gtri(a, b, c, d, e, f, CA(col, fn, 7), 1); const lx = Math.min(a, c, e), ly = Math.min(b, d, f); gPrev = { x: lx, y: ly, w: Math.max(a, c, e) - lx + 1, h: Math.max(b, d, f) - ly + 1 };
+      },
       ggrad: (x, y, w, h, a, b, vert) => {
-        x = CO(x, "screen.gradient", 1); y = CO(y, "screen.gradient", 2); w = CO(w, "screen.gradient", 3); h = CO(h, "screen.gradient", 4);
+        x = PX(x, "screen.gradient", 1); y = PY(y, "screen.gradient", 2); w = PX(w, "screen.gradient", 3); h = PY(h, "screen.gradient", 4);
         a = NI(a, "screen.gradient", 5); b = NI(b, "screen.gradient", 6);
         if (a < 0 || a > 0xFFFFFF) throw argErr("screen.gradient", 5, "color must be 0..0xFFFFFF"); if (b < 0 || b > 0xFFFFFF) throw argErr("screen.gradient", 6, "color must be 0..0xFFFFFF");
         const v = vert === undefined || vert === null || vert !== false; if (w <= 0 || h <= 0) return;
+        const bx = placeBox(x, y, w, h); x = bx.x; y = bx.y; gPrev = bx;
         const n = v ? h : w;
         for (let i = 0; i < n; i++) {
           const t = n > 1 ? Math.floor(i * 255 / (n - 1)) : 0, ch = s => Math.floor((((a >> s) & 255) * (255 - t) + ((b >> s) & 255) * t) / 255);
           const c = c565((ch(16) << 16) | (ch(8) << 8) | ch(0)); if (v) gfill(x, y + i, w, 1, c); else gfill(x + i, y, 1, h, c);
         }
       },
+      // screen.align([h [, v]]): left|center|right dan top|middle|bottom (urutan bebas); tanpa argumen = reset
+      galign: (a, b) => {
+        if (a === undefined || a === null) { gAlH = gAlV = 0; return; }
+        let h = gAlH, v = gAlV;
+        [a, b].forEach((w, i) => {
+          if (w === undefined || w === null) return;
+          w = Sx(w, "screen.align", i + 1);
+          if (w === "left") h = 0; else if (w === "center") h = 1; else if (w === "right") h = 2;
+          else if (w === "top") v = 0; else if (w === "middle") v = 1; else if (w === "bottom") v = 2;
+          else throw argErr("screen.align", i + 1, "must be left/center/right or top/middle/bottom");
+        });
+        gAlH = h; gAlV = v;
+      },
+      gname: n => { storeMark(Sx(n, "screen.name", 1), { ...gPrev }); },
+      gmark: (n, x, y, w, h) => { const fn = "screen.mark"; n = Sx(n, fn, 1); storeMark(n, { x: PX(x, fn, 2), y: PY(y, fn, 3), w: PX(w, fn, 4), h: PY(h, fn, 5) }); },
+      grel: (e, ax) => {
+        ax = (ax === undefined || ax === null) ? "x" : Sx(ax, "screen.rel", 2);
+        if (ax !== "x" && ax !== "y" && ax !== "r") throw argErr("screen.rel", 2, 'axis must be "x", "y" or "r"');
+        return PO(e, "screen.rel", 1, ax);
+      },
+      gbox: (n, k) => { n = Sx(n, "screen.box", 1); const b = boxOf(n); if (!b) throw argErr("screen.box", 1, "unknown element"); return [b.x, b.y, b.w, b.h][k - 1]; },
       ptr: i => { ptrReq = performance.now(); return i === 1 ? ptrDownApp : i === 2 ? ptrX : ptrY; },   // input.touch: koordinat sentuhan real-time
       touch: p => { p = N(p, "input.touch", 1); if (!(p >= 1 && p <= 4)) throw argErr("input.touch", 1, "pad must be 1..4"); return padDown[p - 1]; },
       sw: () => swDown, millis: () => Math.floor(performance.now() - t0) >>> 0,
