@@ -602,6 +602,12 @@ aside h2 small{font-size:12px;font-weight:500;color:var(--sub);margin-left:6px}
 .tp{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-top:10px}
 #tpCv{width:192px;height:192px;image-rendering:pixelated;border:1px solid var(--line);border-radius:8px;background-color:#000;cursor:crosshair;touch-action:none;
   background-image:linear-gradient(#ffffff14 1px,transparent 1px),linear-gradient(90deg,#ffffff14 1px,transparent 1px);background-size:12px 12px}
+.tp-pal{display:grid;grid-template-columns:repeat(8,28px);gap:6px;align-content:start}
+.tp-pal button{width:28px;height:28px;padding:0;border-radius:6px;border:2px solid var(--line);cursor:pointer;position:relative;
+  background-image:linear-gradient(45deg,#666 25%,transparent 25%,transparent 75%,#666 75%),linear-gradient(45deg,#666 25%,#999 25%,#999 75%,#666 75%);background-size:8px 8px;background-position:0 0,4px 4px}
+.tp-pal button i{position:absolute;inset:0;border-radius:4px;display:block}
+.tp-pal button[aria-checked="true"]{border-color:#fff;box-shadow:0 0 0 2px var(--accent,#54d7c9)}
+.tp-pal input{position:absolute;opacity:0;pointer-events:none;width:0;height:0}
 .tp-tools{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-width:230px}.tp-tools .vbtn{margin:0}.tp .hint{flex-basis:100%;margin:0}
 #aZip{margin-top:12px}
 #simHint{font-size:12px;color:var(--sub);white-space:nowrap}
@@ -672,21 +678,22 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
       <input id="description" maxlength="120">
       <label for="packageFile">Impor ZIP</label>
       <input id="packageFile" type="file" accept=".zip,application/zip">
-      <label for="thumbnail">Thumbnail 16×16 (hex)</label>
+      <label for="thumbnail">Thumbnail 16×16 (hex, siluet 1-bit; warna ikut tersimpan lewat kuas di bawah)</label>
       <textarea id="thumbnail" placeholder="00003C7E…"></textarea>
       <canvas id="thumbPreview" width="16" height="16"></canvas>
-    <details id="tpWrap"><summary>Gambar thumbnail dengan kuas piksel</summary>
+    <details id="tpWrap"><summary>Gambar ikon berwarna dengan kuas piksel</summary>
       <div class="tp">
         <canvas id="tpCv" width="16" height="16" aria-label="Kanvas thumbnail 16×16"></canvas>
         <div class="tp-tools">
           <button type="button" class="vbtn" id="tpUndo">↶ Urungkan</button>
           <button type="button" class="vbtn" id="tpClr">Kosongkan</button>
-          <button type="button" class="vbtn" id="tpInv">Balik warna</button>
+          <button type="button" class="vbtn" id="tpFill" aria-pressed="false">Ember: mati</button>
           <button type="button" class="vbtn" id="tpFlip">Cerminkan</button>
           <button type="button" class="vbtn" id="tpImgBtn">Dari gambar…</button>
           <input type="file" id="tpImg" accept="image/*" hidden>
         </div>
-        <small class="hint">Klik atau seret untuk menggambar. Hasilnya langsung menjadi kode hex di atas.</small>
+        <div class="tp-pal" id="tpPal" role="radiogroup" aria-label="Palet 16 warna"></div>
+        <small class="hint">Pilih warna di palet (kotak pertama = transparan/penghapus; klik dua kali kotak lain untuk mengganti warnanya), lalu klik atau seret di kanvas. Klik piksel yang sudah berwarna sama untuk menghapusnya. Ikon berwarna disimpan sebagai baris <code>--@icon …</code> di awal kode (tidak tampil di editor); kolom hex di atas otomatis berisi siluetnya sebagai cadangan 1-bit.</small>
       </div>
     </details>
       
@@ -954,6 +961,18 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
     showPrintMargin: false,
     wrap: true
   });
+  // Ikon berwarna disimpan sebagai baris pertama kode: "--@icon <320 hex>" (komentar Lua biasa, ikut terkirim ke jam lewat
+  // record.code tanpa perubahan di aplikasi Android). Editor tidak menampilkannya; getValue() menambahkannya otomatis.
+  const _aceGet = editor.getValue.bind(editor), _aceSet = editor.setValue.bind(editor);
+  editor.getRaw = _aceGet;
+  editor.getValue = () => { const r = _aceGet(); return window.mgIconHex ? "--@icon " + window.mgIconHex + "\n" + r : r; };
+  editor.setValue = (v, c) => {
+    let t = String(v == null ? "" : v);
+    const m = /^--@icon ([0-9A-Fa-f]{320})[ \t]*(?:\r?\n|$)/.exec(t);
+    if (m) t = t.slice(m[0].length);
+    if (window.mgIconSet) window.mgIconSet(m ? m[1].toUpperCase() : null);
+    return _aceSet(t, c);
+  };
   // Nilai placeholder awal
   editor.setValue('function draw()\n  screen.gradient(0, 0, "100%", "100%", screen.rgb(20, 30, 80), screen.rgb(90, 20, 110))\n  screen.align("center")\n  screen.text("50%", "6%", "APLIKASI SAYA", screen.rgb(255, 220, 90), 2)\n  screen.fill_round_rect("50%", "@prev.bottom+12", "70%", "25%", 10, screen.hsv(180, 80, 95))\n  screen.align("right", "bottom")\n  screen.text("100%-8", "100%-8", "kanan-bawah", screen.rgb(255, 255, 255))\nend', -1);
 
@@ -1847,6 +1866,7 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
     if (!hex) { cv.style.display = "none"; return; }
     const c = cv.getContext("2d");
     c.clearRect(0, 0, 16, 16);
+    if (window.mgIconPaint && window.mgIconPaint(c)) { cv.style.display = "block"; return; }
     c.fillStyle = "#54d7c9";
     for (let y = 0; y < 16; y++) for (let b = 0; b < 2; b++) {
       const byte = parseInt(hex.substr((y * 2 + b) * 2, 2), 16);
@@ -1860,7 +1880,8 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
                 version: $("version").value.trim(), description: $("description").value.trim() };
     const code = editor.getValue();
     const th = checkThumb($("thumbnail").value);
-    const lua = checkLua(code);
+    const lua = checkLua(editor.getRaw());
+    if (lua.ok) { const total = new TextEncoder().encode(code).length; if (total > 16384) { lua.ok = false; lua.msg = `Ukuran ${total} B (termasuk ikon berwarna ±330 B) melebihi batas 16384 B.`; } }
     const checks = [
       { ok: /^[A-Za-z0-9_-]{1,24}$/.test(v.id), msg: v.id ? "ID: huruf, angka, _ atau -, maksimum 24 karakter." : "ID unik wajib diisi.", good: "ID valid." },
       { ok: ["app", "game"].includes(v.type), msg: "Tipe tidak valid.", good: "Tipe valid." },
@@ -3174,7 +3195,7 @@ function __gc() collect(); collect() end
       stop(true);
     }
     async function run() {
-      const code = editor.getValue(), c = checkLua(code);
+      const code = editor.getRaw(), c = checkLua(code);
       if (!c.ok) { say("✗ Verifikasi gagal, tidak dijalankan: " + c.msg, true); return; }
       try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); } catch (e) {}
       stop(true); resetInput(); const my = runId; logEl.textContent = ""; setState(""); loader.start();
@@ -3252,7 +3273,7 @@ function __gc() collect(); collect() end
     $("simTheme").addEventListener("change", () => { setTheme(+$("simTheme").value); if (!running) { rgbBuf.set(BG); blit(); } });
     $("simRun").addEventListener("click", run);
     $("simStop").addEventListener("click", () => { stop(); say("■ Dihentikan."); });
-    $("simReset").addEventListener("click", () => { editor.setValue(DEFAULT_CODE, -1); });
+    $("simReset").addEventListener("click", () => { editor.session.setValue(DEFAULT_CODE); });
     $("simStoreApply").addEventListener("click", storeLoad);
     blit();
     return { say };
@@ -4713,7 +4734,7 @@ function __gc() collect(); collect() end
           if (!r.ok) throw new Error(`${GUIDES[m]} tidak ditemukan (HTTP ${r.status}). Letakkan di folder yang sama dengan halaman ini.`);
           guides[m] = await r.text();
         }
-        const cur = (m === "face" ? fEditor.getValue() : editor.getValue()).slice(0, 16000);
+        const cur = (m === "face" ? fEditor.getValue() : editor.getRaw()).slice(0, 16000);
         const msgs = [...hist[m].slice(-8), { role: "user", text: `${text}\n\n[Current editor content]\n${cur}` }];
         for (let n = 0; ; n++) {
           $("agState").textContent = n ? `Perbaikan ${n}/${MAXFIX}…` : "AI bekerja…";
@@ -4894,42 +4915,89 @@ function __gc() collect(); collect() end
 /* Batch 2: kuas thumbnail, laci database (HP), pintasan simulator */
 (()=>{
   const $=id=>document.getElementById(id);
-  // ---------- kuas thumbnail 16x16 (format sama: 16 baris x 2 byte, bit tertinggi di kiri) ----------
-  const cv=$('tpCv'),cx=cv.getContext('2d'),T=$('thumbnail');
-  let px=new Uint8Array(256),hist=[],mode=-1;
-  const draw=()=>{cx.clearRect(0,0,16,16);cx.fillStyle='#54d7c9';for(let i=0;i<256;i++)if(px[i])cx.fillRect(i&15,i>>4,1,1)};
-  const toHex=()=>{let o='';for(let y=0;y<16;y++)for(let b=0;b<2;b++){let v=0;for(let k=0;k<8;k++)if(px[y*16+b*8+k])v|=0x80>>k;o+=v.toString(16).padStart(2,'0')}return o.toUpperCase()};
-  const fromHex=h=>{px.fill(0);for(let y=0;y<16;y++)for(let b=0;b<2;b++){const v=parseInt(h.substr((y*2+b)*2,2),16);for(let k=0;k<8;k++)px[y*16+b*8+k]=(v&(0x80>>k))?1:0}};
-  const write=()=>{T.value=toHex();T.dispatchEvent(new Event('input',{bubbles:true}))};
-  const snap=()=>{hist.push(px.slice());if(hist.length>30)hist.shift()};
+  // ---------- kuas ikon 16x16 BERWARNA ----------
+  // Format "CI1" (320 hex): 16 entri palet RGB565 (16 x 4 hex; entri 0 = transparan) + 256 piksel (1 hex = indeks palet, baris demi baris).
+  // Kolom thumbnail (64 hex, 1-bit, 16 baris x 2 byte, bit tertinggi di kiri) otomatis berisi siluet: piksel on = indeks != 0.
+  const cv=$('tpCv'),cx=cv.getContext('2d'),T=$('thumbnail'),PAL=$('tpPal');
+  const DEF=['#000000','#FFFFFF','#FF4D4D','#FF9F1C','#FFD93D','#6BCB77','#2EC4B6','#4D96FF','#9B5DE5','#F15BB5','#8D5A3B','#B8B8B8','#5C5C6E','#00E5FF','#C6FF00','#FFB4A2'];
+  const h2n=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+  const q565=h=>{const[r,g,b]=h2n(h);return((r>>3)<<11)|((g>>2)<<5)|(b>>3)};
+  const f565=v=>{const r=(v>>11)&31,g=(v>>5)&63,b=v&31;const x=n=>n.toString(16).padStart(2,'0');return'#'+x((r<<3)|(r>>2))+x((g<<2)|(g>>4))+x((b<<3)|(b>>2))};
+  const snapC=h=>f565(q565(h)).toUpperCase();   // warna setelah dibulatkan ke RGB565 (persis yang tampil di jam)
+  let pal=DEF.map(snapC),px=new Uint8Array(256),hist=[],mode=-1,sel=1,fill=false;
+  window.mgIconHex='';
+  const toColorHex=()=>{if(!px.some(v=>v))return'';let o='';for(let i=0;i<16;i++)o+=(i?q565(pal[i]):0).toString(16).padStart(4,'0');for(let i=0;i<256;i++)o+=px[i].toString(16);return o.toUpperCase()};
+  const toMono=()=>{let o='';for(let y=0;y<16;y++)for(let b=0;b<2;b++){let v=0;for(let k=0;k<8;k++)if(px[y*16+b*8+k])v|=0x80>>k;o+=v.toString(16).padStart(2,'0')}return o.toUpperCase()};
+  const fromMono=h=>{px.fill(0);for(let y=0;y<16;y++)for(let b=0;b<2;b++){const v=parseInt(h.substr((y*2+b)*2,2),16);for(let k=0;k<8;k++)px[y*16+b*8+k]=(v&(0x80>>k))?1:0}};
+  const paint=(c,sc)=>{let any=false;for(let i=0;i<256;i++)if(px[i]){c.fillStyle=pal[px[i]];c.fillRect((i&15)*sc,(i>>4)*sc,sc,sc);any=true}return any};
+  const draw=()=>{cx.clearRect(0,0,16,16);paint(cx,1)};
+  window.mgIconPaint=c=>window.mgIconHex?paint(c,1):false;
+  const refreshPal=()=>{PAL.querySelectorAll('button').forEach((b,i)=>{b.setAttribute('aria-checked',i===sel?'true':'false');if(i)b.firstElementChild.style.background=pal[i]})};
+  const write=()=>{window.mgIconHex=toColorHex();T.value=toMono();T.dispatchEvent(new Event('input',{bubbles:true}));refreshPal()};
+  const snap=()=>{hist.push({px:px.slice(),pal:pal.slice()});if(hist.length>30)hist.shift()};
+  for(let i=0;i<16;i++){
+    const b=document.createElement('button');b.type='button';b.setAttribute('role','radio');b.title=i?'Warna '+i+' (klik dua kali untuk mengganti)':'Transparan / penghapus';
+    const sw=document.createElement('i');b.appendChild(sw);
+    if(i){const inp=document.createElement('input');inp.type='color';inp.value=pal[i].toLowerCase();inp.tabIndex=-1;b.appendChild(inp);
+      inp.addEventListener('input',()=>{pal[i]=snapC(inp.value);sw.style.background=pal[i];draw();window.mgIconHex=toColorHex();T.dispatchEvent(new Event('input',{bubbles:true}))});
+      b.addEventListener('dblclick',()=>inp.click());}
+    b.addEventListener('click',()=>{sel=i;refreshPal()});
+    PAL.appendChild(b);
+  }
+  refreshPal();
+  // dipanggil editor saat kode dimuat: hex = 320 digit berwarna, atau null = tanpa ikon berwarna (jatuh ke thumbnail 1-bit)
+  window.mgIconSet=hex=>{
+    hist=[];
+    if(hex&&/^[0-9A-F]{320}$/.test(hex)){
+      pal=[];for(let i=0;i<16;i++)pal.push(i?f565(parseInt(hex.substr(i*4,4),16)).toUpperCase():'#000000');
+      for(let i=0;i<256;i++)px[i]=parseInt(hex[64+i],16);
+      window.mgIconHex=hex;T.value=toMono();
+    }else{pal=DEF.map(snapC);px.fill(0);window.mgIconHex='';}
+    refreshPal();draw();
+  };
+  // dipanggil validate(): sinkronkan kuas bila pengguna mengetik hex 1-bit sendiri
   window.mgThumb=hex=>{
-    if(hex&&/^[0-9A-F]{64}$/.test(hex)){if(hex!==toHex()){fromHex(hex);}}
-    else if(!T.value.trim())px.fill(0);
+    if(hex&&/^[0-9A-F]{64}$/.test(hex)){if(hex!==toMono()){pal=DEF.map(snapC);fromMono(hex);window.mgIconHex='';refreshPal();}}
+    else if(!T.value.trim()){px.fill(0);window.mgIconHex='';}
     draw();
   };
   const pos=e=>{const r=cv.getBoundingClientRect();return[Math.min(15,Math.max(0,Math.floor((e.clientX-r.left)/r.width*16))),Math.min(15,Math.max(0,Math.floor((e.clientY-r.top)/r.height*16)))]};
   const put=(x,y)=>{const i=y*16+x;if(px[i]!==mode){px[i]=mode;draw();write()}};
-  cv.addEventListener('pointerdown',e=>{e.preventDefault();cv.setPointerCapture(e.pointerId);snap();const[x,y]=pos(e);mode=px[y*16+x]?0:1;put(x,y)});
+  const flood=(x,y)=>{const from=px[y*16+x],to=sel;if(from===to)return;const st=[[x,y]];while(st.length){const[a,b]=st.pop();if(a<0||b<0||a>15||b>15||px[b*16+a]!==from)continue;px[b*16+a]=to;st.push([a+1,b],[a-1,b],[a,b+1],[a,b-1])}draw();write()};
+  cv.addEventListener('pointerdown',e=>{e.preventDefault();const[x,y]=pos(e);snap();if(fill){flood(x,y);return}cv.setPointerCapture(e.pointerId);mode=px[y*16+x]===sel?0:sel;put(x,y)});
   cv.addEventListener('pointermove',e=>{if(mode<0)return;const[x,y]=pos(e);put(x,y)});
   ['pointerup','pointercancel'].forEach(t=>cv.addEventListener(t,()=>{mode=-1}));
   const act=(id,fn)=>$(id).addEventListener('click',()=>{snap();fn();draw();write()});
   act('tpClr',()=>px.fill(0));
-  act('tpInv',()=>px=px.map(v=>v?0:1));
   act('tpFlip',()=>{const n=new Uint8Array(256);for(let y=0;y<16;y++)for(let x=0;x<16;x++)n[y*16+x]=px[y*16+15-x];px=n});
-  $('tpUndo').addEventListener('click',()=>{if(!hist.length)return window.mgToast('Tidak ada yang bisa diurungkan.','ok',1800);px=hist.pop();draw();write()});
+  $('tpFill').addEventListener('click',()=>{fill=!fill;$('tpFill').setAttribute('aria-pressed',fill);$('tpFill').textContent='Ember: '+(fill?'hidup':'mati')});
+  $('tpUndo').addEventListener('click',()=>{if(!hist.length)return window.mgToast('Tidak ada yang bisa diurungkan.','ok',1800);const h=hist.pop();px=h.px;pal=h.pal;draw();write()});
   $('tpImgBtn').addEventListener('click',()=>$('tpImg').click());
+  // Gambar -> ikon berwarna: skala ke 16x16, lalu kuantisasi k-means ke 15 warna (alpha < 50% = transparan)
   $('tpImg').addEventListener('change',e=>{
     const f=e.target.files&&e.target.files[0];e.target.value='';if(!f)return;
     const img=new Image(),u=URL.createObjectURL(f);
     img.onload=()=>{
       URL.revokeObjectURL(u);
       const o=document.createElement('canvas');o.width=o.height=16;const g=o.getContext('2d',{willReadFrequently:true});
-      g.fillStyle='#000';g.fillRect(0,0,16,16);g.imageSmoothingQuality='high';
+      g.imageSmoothingQuality='high';
       const m=Math.min(img.width,img.height);g.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,16,16);
-      const d=g.getImageData(0,0,16,16).data,L=[];let lo=255,hi=0;
-      for(let i=0;i<256;i++){const l=.299*d[i*4]+.587*d[i*4+1]+.114*d[i*4+2];L.push(l);lo=Math.min(lo,l);hi=Math.max(hi,l)}
-      snap();const th=(lo+hi)/2;px=Uint8Array.from(L,l=>hi-lo<24?0:(l>th?1:0));draw();write();
-      window.mgToast('Gambar diubah jadi thumbnail. Pakai "Balik warna" bila terlalu gelap.','ok',3600);
+      const d=g.getImageData(0,0,16,16).data,pts=[];
+      for(let i=0;i<256;i++)if(d[i*4+3]>=128)pts.push({i,c:[d[i*4],d[i*4+1],d[i*4+2]]});
+      snap();px=new Uint8Array(256);
+      if(pts.length){
+        const K=Math.min(15,pts.length);let cen=[];const step=pts.length/K;for(let k=0;k<K;k++)cen.push(pts[Math.floor(k*step)].c.slice());
+        const asg=new Array(pts.length).fill(0),dist=(a,b)=>(a[0]-b[0])**2+(a[1]-b[1])**2+(a[2]-b[2])**2;
+        for(let it=0;it<12;it++){
+          pts.forEach((p,j)=>{let bi=0,bd=1e9;cen.forEach((c,k)=>{const dd=dist(p.c,c);if(dd<bd){bd=dd;bi=k}});asg[j]=bi});
+          cen=cen.map((c,k)=>{const mem=pts.filter((_,j)=>asg[j]===k);if(!mem.length)return c;return[0,1,2].map(ch=>Math.round(mem.reduce((s,p)=>s+p.c[ch],0)/mem.length))});
+        }
+        pal=DEF.map(snapC);
+        cen.forEach((c,k)=>{pal[k+1]=snapC('#'+c.map(v=>v.toString(16).padStart(2,'0')).join(''))});
+        pts.forEach((p,j)=>{px[p.i]=asg[j]+1});
+      }
+      draw();write();
+      window.mgToast('Gambar diubah jadi ikon berwarna (maks. 15 warna).','ok',3200);
     };
     img.onerror=()=>{URL.revokeObjectURL(u);window.mgToast('File gambar tidak bisa dibaca.','bad')};
     img.src=u;
