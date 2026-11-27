@@ -2108,7 +2108,7 @@ def("input.switch", {}, {{"down","bool"}}, function() return "ok", { down = H.sw
 def("indicator.rgb", {{"r","int",0,255},{"g","int",0,255},{"b","int",0,255},{"auto","bool"}}, {},
   function(p)
     if p.auto then H.rgbAuto(); return "ok", {} end
-    if p.r == nil or p.g == nil or p.b == nil then return "bad_param", "r, g, b are required" end
+    if p.r == nil or p.g == nil or p.b == nil then return "bad_param", "" end   -- firmware: handler tidak mengisi detail -> string kosong
     H.rgb(p.r, p.g, p.b); return "ok", {}
   end)
 def("input.touch", {}, {{"down","bool"},{"x","int",0,319},{"y","int",0,215}},
@@ -2134,14 +2134,29 @@ end
 
 -- vyn.request(resource [, params]) -> { ok, resource, ts, data | error, detail }
 local function request(name, params)
+  if type(name) == "number" then name = tostring(name) end   -- luaL_checkstring menerima angka
   if type(name) ~= "string" then error("bad argument #1 to 'request' (string expected, got " .. type(name) .. ")", 2) end
-  if params ~= nil and type(params) ~= "table" then error("bad argument #2 to 'request' (table expected, got " .. type(params) .. ")", 2) end
-  params = params or {}
   local env, spec = { ok = false, resource = name, ts = H.millis() }, RES[name]
-  if not spec then env.error = "unknown_resource"; return env end
-  local d = chk(spec.p, params)
+  if not spec then env.error = "unknown_resource"; return env end   -- firmware: resource dicek SEBELUM params
+  -- readParams() firmware: params harus tabel (bukan error Lua, melainkan bad_param); kunci string; nilai int/float/bool/string; int32 melilit; float -> float32
+  local p, why = {}, nil
+  if params ~= nil then
+    if type(params) ~= "table" then why = "params must be a table"
+    else
+      for k, v in pairs(params) do
+        local t = type(v)
+        if type(k) ~= "string" then why = "param names must be strings"; break
+        elseif t == "number" then
+          if mtype(v) == "integer" then v = (v + 2147483648) % 4294967296 - 2147483648 else v = f32(v) end
+        elseif t ~= "boolean" and t ~= "string" then why = "param '" .. k .. "' has unsupported type"; break end
+        p[k] = v
+      end
+    end
+  end
+  if why then env.error = "bad_param"; env.detail = why:sub(1, 47); return env end   -- firmware: char why[48]
+  local d = chk(spec.p, p)
   if d then env.error = "bad_param"; env.detail = d:sub(1, 63); return env end   -- firmware: char detail[64] (snprintf memotong di 63)
-  local st, vals = spec.h(params)
+  local st, vals = spec.h(p)
   if st ~= "ok" then env.error = st; if st == "bad_param" then env.detail = vals end; return env end
   local data = {}
   for _, f in ipairs(spec.f) do   -- normalize() vyn_api.cpp: urutan skema, tipe dipaksa, float32, dijepit ke rentang, dibulatkan lroundf
@@ -2168,8 +2183,8 @@ vyn = { version = VER, request = request,
   has = function(n) return type(n) == "string" and RES[n] ~= nil end,
   list = function() local t = {}; for k in pairs(RES) do t[#t + 1] = k end; tsort(t); return t end }
 
--- Pembungkus kompatibilitas (hanya lewat request): data atau nil bila belum siap; parameter salah = error Lua
-local function rd(name, params) local e = request(name, params); if e.error == "bad_param" then error(e.detail, 3) end; return e.data end
+-- Pembungkus kompatibilitas (hanya lewat request): data atau nil bila belum siap; parameter salah = error Lua (level 0 = tanpa awalan posisi, seperti luaL_error di fungsi C)
+local function rd(name, params) local e = request(name, params); if e.error == "bad_param" then error(e.detail, 0) end; return e.data end
 input = { touch = function(p) local d = rd("input.pad", { pad = tonumber(p) }); return d ~= nil and d.down end,
   sw = function() local d = rd("input.switch"); return d ~= nil and d.down end,
   millis = function() local d = rd("system.uptime"); return d and d.ms or 0 end,
