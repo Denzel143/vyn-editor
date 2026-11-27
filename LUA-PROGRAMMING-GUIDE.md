@@ -128,7 +128,7 @@ Kategori API:
 | Aktuator (perintah) | LED RGB, buzzer | `vyn.request` dengan params |
 | Event input | `on_touch`, `on_sw`, `on_swipe`, `on_encoder`, `on_text`, `on_pointer` | callback (format sudah kanonik) |
 | Layanan platform | `storage`, `keyboard.request`, `app.keep_alive`, metadata `app` | tabel masing-masing; bukan data hardware |
-| Permukaan gambar | `screen.*` (kanvas warna 320x216; posisi berupa piksel atau ekspresi relatif) | tabel `screen`; ukuran juga ada di `device.info` |
+| Permukaan gambar | `screen.*` (kanvas warna 320x192; posisi berupa piksel atau ekspresi relatif) | tabel `screen`; ukuran juga ada di `device.info` |
 
 ### `vyn.request(resource [, params])`
 
@@ -206,7 +206,7 @@ Menambah resource baru berarti: (1) tambah entri di tabel skema `src/vyn_api.cpp
 
 ### Layar LCD dan sistem posisi
 
-Area gambar aplikasi adalah **320×216 piksel** berwarna (RGB). Di atasnya ada bar judul sistem setinggi 24 piksel (nama aplikasi dan tombol tutup) yang digambar firmware; koordinat `(0, 0)` Lua berada tepat di bawah bar itu. Semua yang berada di luar area dipotong. Warna berupa bilangan bulat `0xRRGGBB` (lihat `screen.rgb` dan `screen.hsv`); bila argumen warna dihilangkan dipakai warna pena (`screen.color`, default putih di awal tiap frame).
+Area gambar aplikasi adalah **320×192 piksel** berwarna (RGB), di antara dua bar sistem pada layar fisik 320×240. Di atasnya ada bar judul setinggi 24 piksel (nama aplikasi dan tombol tutup), dan di bawahnya ada **bar navigasi kosong setinggi 24 piksel** (setinggi kotak navigasi) yang berisi kotak navigasi sistem; keduanya digambar firmware. Koordinat `(0, 0)` Lua berada tepat di bawah bar judul, dan titik paling bawah adalah `y = 191`. Ini adalah batas resolusi virtual aplikasi: semua yang berada di luar area (termasuk di atas kedua bar) dipotong, dan sentuhan di kedua bar tidak diteruskan ke Lua. Jangan menaruh tombol atau elemen penting di dekat `y = 191` yang membutuhkan area di bawahnya; gunakan `screen.height()` atau ekspresi relatif seperti `"100%-8"` agar tata letak mengikuti tinggi area. Warna berupa bilangan bulat `0xRRGGBB` (lihat `screen.rgb` dan `screen.hsv`); bila argumen warna dihilangkan dipakai warna pena (`screen.color`, default putih di awal tiap frame).
 
 #### Dua cara menentukan posisi dan ukuran
 
@@ -228,7 +228,7 @@ Ekspresi adalah jumlah atau selisih beberapa **suku**, misalnya `"100%-8"` atau 
 | Suku | Arti |
 |---|---|
 | `12`, `12.5`, `12px` | Piksel. Sufiks `px` opsional. |
-| `50%` | Persen dari panjang sumbu argumen itu: argumen x dan lebar memakai lebar layar (320), argumen y dan tinggi memakai tinggi area (216), radius memakai sisi layar terpendek (216). |
+| `50%` | Persen dari panjang sumbu argumen itu: argumen x dan lebar memakai lebar layar (320), argumen y dan tinggi memakai tinggi area (192), radius memakai sisi layar terpendek (192). |
 | `50%w`, `50%h` | Memaksa persen dari lebar atau tinggi layar, apa pun posisi argumennya. Berguna untuk tinggi yang sebanding dengan lebar, misalnya kotak persegi: `screen.rect(10, 10, "30%w", "30%w")`. |
 | `50%@kartu.w` | Persen dari satu properti elemen lain. |
 | `@kartu.right` | Nilai satu properti elemen lain. |
@@ -249,7 +249,7 @@ Elemen yang bisa diacu:
 
 | Nama | Isi |
 |---|---|
-| `screen` | Seluruh area gambar: `0, 0, 320, 216`. |
+| `screen` | Seluruh area gambar: `0, 0, 320, 192`. |
 | `prev` | Elemen yang **terakhir digambar** pada frame ini (awal frame = seluruh layar). |
 | nama buatan | Elemen yang diberi nama lewat `screen.name(...)` atau didaftarkan lewat `screen.mark(...)`. |
 
@@ -335,7 +335,7 @@ end
 | `screen.rgb(r, g, b)` | Menghasilkan warna dari komponen 0..255. |
 | `screen.hsv(h, s, v)` | Menghasilkan warna dari `h` 0..359, `s` dan `v` 0..100. |
 | `screen.width()` | Menghasilkan `320`. |
-| `screen.height()` | Menghasilkan `216`. |
+| `screen.height()` | Menghasilkan `192`. |
 
 Argumen warna adalah bilangan bulat `0xRRGGBB` dan bukan posisi, jadi tidak menerima ekspresi. Radius `r` pada `round_rect` dan `circle` menerima ekspresi (persen dihitung dari sisi layar terpendek); ukuran huruf `ukuran` tetap bilangan bulat 1..4.
 
@@ -401,7 +401,7 @@ Argumen `on_pointer`:
 | Argumen | Isi |
 |---|---|
 | `state` | `"down"` saat jari menyentuh, `"move"` saat posisinya berubah, `"up"` saat jari diangkat. |
-| `x`, `y` | Koordinat piksel di **area aplikasi**: `x` 0..319, `y` 0..215. Titik `(0, 0)` berada tepat di bawah bar judul sistem, sama dengan koordinat `screen.*`. Pada `"up"` yang dikirim adalah posisi terakhir jari. |
+| `x`, `y` | Koordinat piksel di **area aplikasi**: `x` 0..319, `y` 0..191. Titik `(0, 0)` berada tepat di bawah bar judul sistem, sama dengan koordinat `screen.*`. Pada `"up"` yang dikirim adalah posisi terakhir jari. |
 
 Di mode pointer, layar **tidak lagi berperan sebagai SW dan pad touch**: ketuk tidak menjadi klik SW, tahan tidak menjadi tahan SW, seret vertikal tidak menjadi `on_encoder`, dan usap horizontal tidak menjadi `on_swipe`. Seluruh sentuhan di area aplikasi dikirim apa adanya sebagai koordinat dan status tekan. Hal yang tetap dimiliki sistem:
 
