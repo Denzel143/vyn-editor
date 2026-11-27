@@ -2392,14 +2392,14 @@ function __gc() collect(); collect() end
         out[y * LW + x] = finishWall(r, g, b, x, y);
       }
     };
-    const BG = new Uint32Array(LW * LH);     // = lcdWallEyes (wallpaper x100/256): latar permukaan aplikasi Lua (appFrameBegin)
+    const BG = new Uint32Array(LW * LH);     // = lcdWallEyes (wallpaper warna asli, tanpa peredupan): latar permukaan aplikasi Lua (appFrameBegin)
     const KBG = new Uint32Array(LW * LH);    // = lcdWallEyes lalu shade 150: latar keyboard layar sentuh (kbOverlayDraw)
     const LUT = new Uint16Array(256);        // lut warna tema (gradien pelangi 4 warna) untuk keyboard
     let themeIdx = 0;
     const setTheme = th => {
       themeIdx = ((th | 0) % 4 + 4) % 4;
       const w = new Uint16Array(LW * LH); genWall(themeIdx, w);
-      for (let i = 0; i < LW * LH; i++) { const e = dim565(w[i], 100); BG[i] = PX565[e]; KBG[i] = PX565[dim565(e, 150)]; }
+      for (let i = 0; i < LW * LH; i++) { const e = w[i]; BG[i] = PX565[e]; KBG[i] = PX565[dim565(e, 150)]; }
       const p = PAL[themeIdx]; for (let i = 0; i < 256; i++) { const seg = i >> 6; LUT[i] = lerp565(p[seg], p[(seg + 1) & 3], (i & 63) << 2); }
     };
     setTheme(0);
