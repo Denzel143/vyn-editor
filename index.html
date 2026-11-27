@@ -2285,7 +2285,11 @@ function __gc() collect(); collect() end
       }
     };
     // warna 0xRRGGBB -> RGB565 -> piksel kanvas (meniru kuantisasi LCD ILI9341)
-    const c565 = c => { const R = (c >> 19) & 31, G = (c >> 10) & 63, B = (c >> 3) & 31;
+    // Gamma software panel (cermin LCD_SOFT_GAMMA di src/vyn_lcd.h): keluaran = masukan^(1/g) per kanal RGB565, lalu ekspansi bit panel
+    const SOFT_GAMMA = 1.15;
+    const gamTab = n => Array.from({ length: n }, (_, i) => Math.trunc(Math.pow(i / (n - 1), 1 / SOFT_GAMMA) * (n - 1) + 0.5));
+    const GAM5 = gamTab(32), GAM6 = gamTab(64);
+    const c565 = c => { const R = GAM5[(c >> 19) & 31], G = GAM6[(c >> 10) & 63], B = GAM5[(c >> 3) & 31];
       return (0xFF000000 | (((B << 3) | (B >> 2)) << 16) | (((G << 2) | (G >> 4)) << 8) | ((R << 3) | (R >> 2))) >>> 0; };
     let gpen = c565(0xFFFFFF), gOy = TOP, gLim = AH;
     // Posisi relatif (cermin app_lua.cpp): elemen bernama, @prev, dan perataan; direset tiap frame di appBegin()
@@ -2300,7 +2304,7 @@ function __gc() collect(); collect() end
     };
     const dim565 = (c, k) => (((((c >> 11) & 31) * k) >> 8) << 11) | (((((c >> 5) & 63) * k) >> 8) << 5) | (((c & 31) * k) >> 8);
     const PX565 = new Uint32Array(65536);          // RGB565 -> piksel kanvas (ekspansi bit seperti panel ILI9341)
-    for (let c = 0; c < 65536; c++) { const R = (c >> 11) & 31, G = (c >> 5) & 63, B = c & 31;
+    for (let c = 0; c < 65536; c++) { const R = GAM5[(c >> 11) & 31], G = GAM6[(c >> 5) & 63], B = GAM5[c & 31];
       PX565[c] = (0xFF000000 | (((B << 3) | (B >> 2)) << 16) | (((G << 2) | (G >> 4)) << 8) | ((R << 3) | (R >> 2))) >>> 0; }
     const PAL = [
       [R565(0, 229, 255), R565(255, 43, 214), R565(255, 225, 77), R565(61, 255, 162)],
@@ -2311,6 +2315,17 @@ function __gc() collect(); collect() end
       let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0;
       h = Math.imul((h ^ (h >>> 13)) >>> 0, 1274126177) >>> 0; h = (h ^ (h >>> 16)) >>> 0;
       return (h & 0xFFFF) / 65535;
+    };
+    // Finishing wallpaper (identik dengan lcdRgbFinish di INO): saturasi 1,15 + kurva kontras 0,20 + dithering Bayer 4x4
+    const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+    const c255 = v => v < 0 ? 0 : v > 255 ? 255 : v;
+    const contrast = c => { const v = c / 255; return (v + 0.20 * (v * v * (3 - 2 * v) - v)) * 255; };
+    const finishWall = (r, g, b, x, y) => {
+      r = c255(r); g = c255(g); b = c255(b);
+      const l = 0.299 * r + 0.587 * g + 0.114 * b;
+      r = c255(l + (r - l) * 1.15); g = c255(l + (g - l) * 1.15); b = c255(l + (b - l) * 1.15);
+      const t = (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
+      return R565(Math.trunc(c255(contrast(r) + t * 8)), Math.trunc(c255(contrast(g) + t * 4)), Math.trunc(c255(contrast(b) + t * 8)));
     };
     const genWall = (th, out) => {
       for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) {
@@ -2374,7 +2389,7 @@ function __gc() collect(); collect() end
             if (Math.abs(d - rad) < 0.9) { r += 150; g += 190; b += 200; }
           }
         }
-        out[y * LW + x] = rgbI(r, g, b);
+        out[y * LW + x] = finishWall(r, g, b, x, y);
       }
     };
     const BG = new Uint32Array(LW * LH);     // = lcdWallEyes (wallpaper x100/256): latar permukaan aplikasi Lua (appFrameBegin)
