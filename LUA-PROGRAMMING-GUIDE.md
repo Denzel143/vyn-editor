@@ -27,11 +27,38 @@ Isi identitas di `record.json` dengan ID unik (maksimum 24 karakter; huruf, angk
 }
 ```
 
-`thumbnail.hex` adalah tepat 64 digit hexadecimal (32 byte untuk gambar 16×16, MSB-first per baris). `main.lua` berisi source Lua 5.4 dan maksimal 16 KiB UTF-8; program wajib mendefinisikan `draw()`. Saat mengedit program atau ikon, perbarui juga field `code` atau `thumbnail` di `record.json` agar isinya sesuai dengan file terkait. Contoh paket kerja yang dapat dijadikan titik awal berada di folder [app-store-examples/](./app-store-examples/).
+`thumbnail.hex` adalah tepat 64 digit hexadecimal (32 byte untuk gambar 16×16, MSB-first per baris). Gambar ini 1-bit (siluet) dan dipakai sebagai cadangan; ikon yang tampil berwarna di jam disimpan terpisah sebagai [ikon berwarna](#ikon-berwarna-aplikasi-dan-game) di baris pertama `main.lua`. `main.lua` berisi source Lua 5.4 dan maksimal 16 KiB UTF-8; program wajib mendefinisikan `draw()`. Saat mengedit program atau ikon, perbarui juga field `code` atau `thumbnail` di `record.json` agar isinya sesuai dengan file terkait. Contoh paket kerja yang dapat dijadikan titik awal berada di folder [app-store-examples/](./app-store-examples/).
 
 Buat arsip ZIP dari **isi folder** tersebut sehingga ketiga file berada di root ZIP, bukan terbungkus satu folder tambahan. Nama ZIP dapat menggunakan ID, misalnya `game_tap_snake_01.zip`. Di [app-store-admin.html](./app-store-admin.html), pilih ZIP tersebut; halaman akan memparse `record.json`, `thumbnail.hex`, dan `main.lua`, lalu mengisi kolom ID, nama, tipe, versi, deskripsi, thumbnail, dan program. Periksa atau edit kolom yang terisi, kemudian gunakan satu tombol **Unggah ke Firebase RTDB** untuk mengirim record ke `/apps/{id}`.
 
 RTDB menyimpan record JSON dengan source di `code`; ia tidak menyimpan file ZIP biner. Creator memparse ZIP di browser dan mengunggah record hasil parse agar aplikasi Native yang sudah ada tetap dapat membaca katalog. ZIP tetap dapat disimpan atau dibagikan terpisah sebagai arsip proyek.
+
+## Ikon berwarna (aplikasi dan game)
+
+Ikon aplikasi dan game di layar LCD jam dapat berwarna: 16×16 piksel dengan palet 16 warna. Ikon berwarna **tidak** memakai field baru; ia disimpan sebagai baris komentar pertama di `main.lua`, sehingga ikut terkirim bersama program tanpa perubahan pada aplikasi Android dan format katalog RTDB:
+
+```lua
+--@icon <320 digit hex>
+function draw()
+  ...
+end
+```
+
+Format 320 digit hex (huruf besar atau kecil):
+
+| Bagian | Panjang | Isi |
+| --- | --- | --- |
+| Palet | 64 digit | 16 entri × 4 digit, masing-masing warna RGB565. Entri 0 diabaikan (selalu transparan) |
+| Piksel | 256 digit | 1 digit per piksel (indeks palet 0-F), 16 baris × 16 kolom, kiri ke kanan, atas ke bawah |
+
+Aturan:
+
+- Baris `--@icon` harus berada di **baris pertama** file dan diikuti persis 320 digit hex. Bila tidak valid atau tidak ada, jam memakai thumbnail 1-bit (`thumbnail.hex`): putih di atas tile berwarna.
+- Ikon berwarna dihitung dalam batas 16 KiB program (±330 byte).
+- Piksel berindeks 0 transparan. Pada ikon berwarna, tile ditampilkan dengan latar gelap supaya warna terlihat; pada ikon 1-bit, tile berwarna otomatis.
+- `thumbnail.hex` tetap wajib 64 digit. Editor di [app-store-admin.html](./app-store-admin.html) mengisinya otomatis dengan siluet ikon berwarna (piksel berindeks selain 0 = menyala), jadi tidak perlu diisi manual.
+
+Cara membuat paling mudah: buka bagian **Gambar ikon berwarna dengan kuas piksel** di creator. Pilih warna dari palet, gambar di kanvas 16×16 (tersedia ember, cermin, urungkan, dan impor dari gambar yang dikuantisasi ke 15 warna). Baris `--@icon` ditambahkan otomatis saat membuat paket ZIP atau mengunggah ke RTDB dan disembunyikan dari editor kode; saat ZIP atau record dimuat kembali, baris itu dibaca lagi ke kuas. Bila menulis manual di `main.lua`, hasil encoding RGB565 adalah `((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)`, ditulis 4 digit hex.
 
 ## Alur program
 
