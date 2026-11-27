@@ -3207,7 +3207,7 @@ function __gc() collect(); collect() end
     };
     const cleanMsg = e => { const m = String((e && e.message) || e).replace(/^Error:\s*/, "").split("\n")[0]; 
       if (/timeout/i.test(m)) return "melewati batas waktu eksekusi (loop terlalu lama); aplikasi dihentikan";
-      if (/not enough memory|memory limit|out of memory/i.test(m)) return "melebihi batas memori interpreter (firmware 48 KiB; simulator memakai ±1,4–1,7× memori per nilai Lua, jadi batasnya sudah dilonggarkan); aplikasi dihentikan";
+      if (/not enough memory|memory limit|out of memory/i.test(m)) return "melebihi batas memori interpreter (firmware 512 KiB; simulator memakai ±1,4–1,7× memori per nilai Lua, jadi batasnya sudah dilonggarkan); aplikasi dihentikan";
       if (/unreachable|memory access out of bounds|^abort|RuntimeError/i.test(m)) return "mesin Lua simulator berhenti tak terduga (" + m + "); biasanya akibat memori habis atau rekursi terlalu dalam";
       return m; };
     function stop(quiet) {
@@ -3241,10 +3241,8 @@ function __gc() collect(); collect() end
         // Diukur dengan beban yang sama (array, objek {x,y,vx,vy}, hash string, closure): program yang muat di firmware butuh
         // 1,41x-1,72x kelonggaran di simulator. Faktor 1,75x menjamin tidak ada error palsu; konsekuensinya program yang melebihi
         // firmware kurang dari ±25-75% bisa lolos di simulator tetapi tetap gagal di perangkat.
-        // Heap perangkat yang sempit membatasi Lua lebih keras dari 48 KiB (malloc gagal -> "Lua failed: bad code").
-        // Tiru dengan mengisi angka "SRAM:xxKB" dari layar info perangkat, di konsol browser: localStorage.vynSramKb = 18
-        let devKb = 0; try { devKb = +localStorage.getItem("vynSramKb") || 0; } catch (e) {}
-        const FW_HEADROOM = Math.max(0, Math.min(48 * 1024, devKb > 0 ? devKb * 1024 : 1e9) - 10900), SIM_FACTOR = 1.75;
+        // Firmware dengan PSRAM: jatah Lua 512 KiB (LUA_MEMORY_LIMIT_PSRAM di app_lua.cpp); tanpa PSRAM 48 KiB.
+        const FW_HEADROOM = 512 * 1024 - 10900, SIM_FACTOR = 1.75;
         eng.global.setMemoryMax(eng.global.getMemoryUsed() + Math.round(FW_HEADROOM * SIM_FACTOR));
         gcMark = eng.global.getMemoryUsed() + GC_SLACK;
         if (my !== runId) return;
