@@ -2086,6 +2086,8 @@ storage = {
 -- ===== LAPISAN 1: HAL simulator = fungsi host H.* (nilai dari slider/kontrol simulator); hanya broker yang memanggilnya =====
 local ipairs, pairs, error, tsort, huge = ipairs, pairs, error, table.sort, math.huge   -- salinan lokal: program tidak bisa merusak broker dengan menimpa global
 local VER, RES, floor = 2, {}, math.floor
+local spack, sunpack = string.pack, string.unpack
+local function f32(x) return (sunpack("<f", spack("<f", x))) end   -- nilai float firmware = float32
 -- field: {nama, tipe, min, max}; param: {nama, tipe, min, max, wajib}
 local function def(name, params, fields, h) RES[name] = { p = params, f = fields, h = h } end
 def("device.info", {}, {{"api","int"},{"display_w","int"},{"display_h","int"},{"pads","int"},{"color","bool"},{"touch","bool"}},
@@ -2138,17 +2140,25 @@ local function request(name, params)
   local env, spec = { ok = false, resource = name, ts = H.millis() }, RES[name]
   if not spec then env.error = "unknown_resource"; return env end
   local d = chk(spec.p, params)
-  if d then env.error = "bad_param"; env.detail = d; return env end
+  if d then env.error = "bad_param"; env.detail = d:sub(1, 63); return env end   -- firmware: char detail[64] (snprintf memotong di 63)
   local st, vals = spec.h(params)
   if st ~= "ok" then env.error = st; if st == "bad_param" then env.detail = vals end; return env end
   local data = {}
-  for _, f in ipairs(spec.f) do   -- normalisasi seperti broker firmware: urutan skema, tipe dipaksa, nilai dijepit ke rentang
-    local v = vals[f[1]]
-    if f[2] ~= "bool" then
-      if type(v) ~= "number" or v ~= v or v == huge or v == -huge then env.error = "error"; env.detail = "field '" .. f[1] .. "' is not finite"; return env end
-      if f[3] then v = v < f[3] and f[3] or (v > f[4] and f[4] or v) end
-      if f[2] == "int" then v = floor(v + 0.5) else v = v + 0.0 end
+  for _, f in ipairs(spec.f) do   -- normalize() vyn_api.cpp: urutan skema, tipe dipaksa, float32, dijepit ke rentang, dibulatkan lroundf
+    local v, det = vals[f[1]], nil
+    if v == nil then det = "provider missing field '" .. f[1] .. "'"
+    elseif f[2] == "bool" then
+      if type(v) ~= "boolean" then det = "field '" .. f[1] .. "' must be bool" end
+    elseif type(v) ~= "number" then det = "field '" .. f[1] .. "' must be finite"
+    elseif not (f[2] == "int" and not f[3] and mtype(v) == "integer") then   -- int tanpa rentang tetap int32 persis (mis. uptime)
+      v = f32(v)
+      if v ~= v or v == huge or v == -huge then det = "field '" .. f[1] .. "' must be finite"
+      else
+        if f[3] then v = v < f[3] and f[3] or (v > f[4] and f[4] or v) end
+        if f[2] == "int" then v = v >= 0 and floor(v + 0.5) or -floor(-v + 0.5) end   -- lroundf: setengah menjauhi nol
+      end
     end
+    if det then env.error = "error"; env.detail = det:sub(1, 63); return env end
     data[f[1]] = v
   end
   env.ok, env.data = true, data
@@ -3216,7 +3226,10 @@ function __gc() collect(); collect() end
         // Diukur dengan beban yang sama (array, objek {x,y,vx,vy}, hash string, closure): program yang muat di firmware butuh
         // 1,41x-1,72x kelonggaran di simulator. Faktor 1,75x menjamin tidak ada error palsu; konsekuensinya program yang melebihi
         // firmware kurang dari ±25-75% bisa lolos di simulator tetapi tetap gagal di perangkat.
-        const FW_HEADROOM = 48 * 1024 - 10900, SIM_FACTOR = 1.75;
+        // Heap perangkat yang sempit membatasi Lua lebih keras dari 48 KiB (malloc gagal -> "Lua failed: bad code").
+        // Tiru dengan mengisi angka "SRAM:xxKB" dari layar info perangkat, di konsol browser: localStorage.vynSramKb = 18
+        let devKb = 0; try { devKb = +localStorage.getItem("vynSramKb") || 0; } catch (e) {}
+        const FW_HEADROOM = Math.max(0, Math.min(48 * 1024, devKb > 0 ? devKb * 1024 : 1e9) - 10900), SIM_FACTOR = 1.75;
         eng.global.setMemoryMax(eng.global.getMemoryUsed() + Math.round(FW_HEADROOM * SIM_FACTOR));
         gcMark = eng.global.getMemoryUsed() + GC_SLACK;
         if (my !== runId) return;
