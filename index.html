@@ -838,7 +838,7 @@ body.locked>main,body.locked>aside{filter:blur(6px);pointer-events:none}
       <div class="sim-left">
         <canvas id="padStrip"></canvas>
         <div class="oled-wrap">
-          <canvas id="oled" width="320" height="240" aria-label="Layar LCD 320×240 (area aplikasi 320×216); klik/seret = sentuhan"></canvas>
+          <canvas id="oled" width="320" height="240" aria-label="Layar LCD 320×240 (area aplikasi 320×192, bar navigasi di bawah); klik/seret = sentuhan; seret kotak navigasi: atas = Home, kiri = Back, kanan = Recents"></canvas>
           <div id="simLoad" aria-hidden="true"><div class="sim-load-bar"><i id="simLoadFill"></i></div><b id="simLoadPct">0%</b></div>
         </div>
         <div class="sim-enc">
@@ -2065,9 +2065,9 @@ function __run(src) local f, e = load(src, "=app", "t"); if not f then error(e, 
 function __call(name, ...) local f = _G[name]; if type(f) ~= "function" then return false end left = BUDGET; sethook(onbudget, "", 1000); f(...); sethook(); return true end
 local mtype = math.type
 local function numstr(v) if type(v) == "number" then return tostring(v) end return v end   -- seperti lua_tolstring: 3.0 -> "3.0"
--- DISPLAY v2: permukaan RGB 320x216 (di bawah bar judul sistem 24 px). Warna = 0xRRGGBB; argumen warna opsional di akhir (default = warna pena).
+-- DISPLAY v2: permukaan RGB 320x192 (di antara bar judul sistem 24 px dan bar navigasi 24 px). Warna = 0xRRGGBB; argumen warna opsional di akhir (default = warna pena).
 screen = {
-  width = function() return 320 end, height = function() return 216 end,
+  width = function() return 320 end, height = function() return 192 end,
   rgb = H.grgb, hsv = H.ghsv, color = H.gcolor, clear = H.gclear, pixel = H.gpixel, line = H.gline,
   rect = H.grect, fill_rect = H.gfrect, round_rect = H.grrect, fill_round_rect = H.gfrrect,
   circle = H.gcirc, fill_circle = H.gfcirc, triangle = H.gtri, fill_triangle = H.gftri, gradient = H.ggrad,
@@ -2091,7 +2091,7 @@ local function f32(x) return (sunpack("<f", spack("<f", x))) end   -- nilai floa
 -- field: {nama, tipe, min, max}; param: {nama, tipe, min, max, wajib}
 local function def(name, params, fields, h) RES[name] = { p = params, f = fields, h = h } end
 def("device.info", {}, {{"api","int"},{"display_w","int"},{"display_h","int"},{"pads","int"},{"color","bool"},{"touch","bool"}},
-  function() return "ok", { api = VER, display_w = 320, display_h = 216, pads = 4, color = true, touch = true } end)
+  function() return "ok", { api = VER, display_w = 320, display_h = 192, pads = 4, color = true, touch = true } end)
 def("system.uptime", {}, {{"ms","int"}}, function() return "ok", { ms = H.millis() } end)
 def("system.time", {}, {{"weekday","int",1,7},{"day","int",1,31},{"month","int",1,12},{"year","int",2000,2200},{"hour","int",0,23},{"minute","int",0,59},{"second","int",0,59}},
   function() local w = H.time(1); if w == nil then return "not_ready" end
@@ -2111,7 +2111,7 @@ def("indicator.rgb", {{"r","int",0,255},{"g","int",0,255},{"b","int",0,255},{"au
     if p.r == nil or p.g == nil or p.b == nil then return "bad_param", "" end   -- firmware: handler tidak mengisi detail -> string kosong
     H.rgb(p.r, p.g, p.b); return "ok", {}
   end)
-def("input.touch", {}, {{"down","bool"},{"x","int",0,319},{"y","int",0,215}},
+def("input.touch", {}, {{"down","bool"},{"x","int",0,319},{"y","int",0,191}},
   function() return "ok", { down = H.ptr(1), x = H.ptr(2), y = H.ptr(3) } end)
 def("audio.tone", {{"freq","int",100,10000,true},{"ms","int",1,2000,true}}, {}, function(p) H.buzzer(p.freq, p.ms); return "ok", {} end)
 
@@ -2209,8 +2209,8 @@ function __gc() collect(); collect() end
   const sim = (() => {
     const W = 128, H = 64, fb = new Uint8Array(W * H);
     const oled = $("oled"), octx = oled.getContext("2d");
-    // ---------- LCD 320x240 RGB565 (DISPLAY v2): permukaan aplikasi = 320x216 di bawah bar judul 24 px ----------
-    const LW = 320, LH = 240, TOP = 24, AH = 216;
+    // ---------- LCD 320x240 RGB565 (DISPLAY v2): permukaan aplikasi = 320x192 di antara bar judul 24 px dan bar navigasi 24 px ----------
+    const LW = 320, LH = 240, TOP = 24, NAVH = 24, NAVT = LH - NAVH, AH = NAVT - TOP;   // AH = 192: area aplikasi di antara bar judul (atas) dan bar navigasi kosong (bawah)
     const rgbBuf = new Uint32Array(LW * LH), img = new ImageData(new Uint8ClampedArray(rgbBuf.buffer), LW, LH);
     const logEl = $("simLog");
     const say = (m, bad) => {
@@ -2478,8 +2478,30 @@ function __gc() collect(); collect() end
       gfill(0, 0, LW, TOP, c565(0x080808)); ghl(0, TOP - 1, LW, c565(0x00E5FF));
       gtext(8, 4, $("name").value.trim().slice(0, 20), c565(0x00E5FF), 2);
       gline(296, 6, 308, 18, c565(0xFF2020)); gline(308, 6, 296, 18, c565(0xFF2020));
+      gOy = NAVT; gLim = NAVH;                         // bar navigasi bawah (baris 216..239): kosong, kotak navigasi digambar navDraw()
+      gfill(0, 0, LW, NAVH, c565(0x080808)); ghl(0, 0, LW, c565(0x00E5FF));
       gOy = TOP; gLim = AH; gpen = c565(0xFFFFFF);
       gMarks = new Map(); gPrev = { x: 0, y: 0, w: LW, h: AH }; gAlH = gAlV = 0;   // layoutReset()
+    };
+    // Kotak navigasi (cermin lcdNavDraw di INO): 22 px di tengah bar bawah, mengikuti jari saat diseret.
+    const navPick = (dx, dy) => (dy < -26 && -dy >= Math.abs(dx)) ? 1 : (dx < -30 && -dx > Math.abs(dy)) ? 2 : (dx > 30 && dx > Math.abs(dy)) ? 3 : 0;   // 1 Home, 2 Back, 3 Recents
+    const navDraw = () => {
+      gOy = 0; gLim = LH;
+      const drag = NAV.drag, ink = c565(0x12131A), fg = c565(0xE8E6EE), acc = c565(0xD0BCFF);
+      const ox = drag ? Math.max(-48, Math.min(48, NAV.dx)) : 0, oy = drag ? Math.max(-48, Math.min(0, NAV.dy)) : 0;
+      const x = 149 + ox, y = NAVT + 1 + oy;
+      grrect(x, y, 22, 22, 6, true, drag ? acc : c565(0x24252D)); grrect(x, y, 22, 22, 6, false, fg);
+      const act = drag ? navPick(NAV.dx, NAV.dy) : 0;
+      if (act === 1) {            // Home: rumah
+        gline(x + 11, y + 4, x + 4, y + 11, ink); gline(x + 11, y + 5, x + 5, y + 11, ink); gline(x + 11, y + 4, x + 18, y + 11, ink); gline(x + 11, y + 5, x + 17, y + 11, ink);
+        gfill(x + 6, y + 11, 10, 7, ink); gfill(x + 9, y + 14, 4, 4, acc);
+      } else if (act === 3) {     // Recents: tiga garis
+        gfill(x + 5, y + 6, 12, 2, ink); gfill(x + 5, y + 10, 12, 2, ink); gfill(x + 5, y + 14, 12, 2, ink);
+      } else if (act === 2) {     // Back: panah kiri
+        gfill(x + 6, y + 10, 11, 2, ink);
+        gline(x + 5, y + 11, x + 10, y + 6, ink); gline(x + 6, y + 11, x + 11, y + 6, ink); gline(x + 5, y + 11, x + 10, y + 16, ink); gline(x + 6, y + 11, x + 11, y + 16, ink);
+      } else grrect(x + 7, y + 7, 8, 8, false, drag ? ink : fg);
+      gOy = TOP; gLim = AH;
     };
     const blit = () => octx.putImageData(img, 0, 0);
     const blitKb = () => blit();   // keyboard digambar langsung 320x240 ke rgbBuf (kbDraw)
@@ -2891,29 +2913,34 @@ function __gc() collect(); collect() end
     ["pointerup", "pointercancel"].forEach(t => cap.addEventListener(t, () => setSw(false)));
 
     // ---------- Layar sentuh LCD (klik/seret/jari pada kanvas) ----------
-    // Aplikasi yang mendefinisikan on_pointer atau memanggil input.touch/input.pointer mendapat koordinat sentuhan mentah (area aplikasi 320x216).
+    // Aplikasi yang mendefinisikan on_pointer atau memanggil input.touch/input.pointer mendapat koordinat sentuhan mentah (area aplikasi 320x192).
     // Aplikasi lain: ketuk = klik SW, tahan = tahan SW, seret vertikal = putar encoder, usap horizontal = on_swipe (sama seperti firmware).
+    // Bar navigasi (24 px terbawah, baris 216..239) kosong kecuali kotak navigasi: seret ke atas = Home, kiri = Back, kanan = Recents.
     // Bar judul (24 px teratas): ketuk tombol x di kanan = tutup program (di perangkat membuka dialog Suspend/Close); tahan SW milik aplikasi.
     let hasPtrCb = false, ptrReq = -1e9, ptrDownApp = false, ptrX = 0, ptrY = 0;
+    const NAV = { drag: false, dx: 0, dy: 0 };   // kotak navigasi: zona sentuh x 108..211, y >= 212 (NAVH_X0/X1/Y0 di INO)
     const P = { id: null, mode: "", sx: 0, sy: 0, t: 0, moved: false, swiped: false, hold: false, anchor: 0, holdT: 0 };
     const ptrMode = () => hasPtrCb || performance.now() - ptrReq < 1500;
     const opos = e => { const r = oled.getBoundingClientRect(); return { x: Math.max(0, Math.min(LW - 1, Math.floor((e.clientX - r.left) / r.width * LW))), y: Math.max(0, Math.min(LH - 1, Math.floor((e.clientY - r.top) / r.height * LH))) }; };
-    const resetPointer = () => { clearTimeout(P.holdT); P.id = null; P.mode = ""; ptrDownApp = false; };
+    const resetPointer = () => { clearTimeout(P.holdT); P.id = null; P.mode = ""; ptrDownApp = false; NAV.drag = false; NAV.dx = NAV.dy = 0; };
     oled.addEventListener("pointerdown", e => {
       if (!running || P.id !== null) return;
       const p = opos(e); P.id = e.pointerId; oled.setPointerCapture(e.pointerId); touchAct();
       P.sx = p.x; P.sy = p.y; P.anchor = p.y; P.t = performance.now(); P.moved = P.swiped = P.hold = false;
+      if (!kbOpen && p.x >= 108 && p.x < 212 && p.y >= 212) { P.mode = "nav"; NAV.drag = true; NAV.dx = NAV.dy = 0; return; }   // kotak navigasi menang atas semua kecuali keyboard
       if (kbOpen) { P.mode = "kb"; P.lx = p.x; P.ly = p.y; kbTouch(0, p.x, p.y); return; }   // keyboard: sentuhan mentah (lcdRawOnly)
+      if (p.y >= NAVT) { P.mode = "bar"; return; }   // bar navigasi kosong: bukan area aplikasi, tidak diteruskan ke Lua
       if (!kbOpen && p.y < TOP) { P.mode = "title"; return; }
-      if (!kbOpen && ptrMode()) { P.mode = "ptr"; ptrDownApp = true; ptrX = p.x; ptrY = Math.max(0, p.y - TOP); guard(() => call("on_pointer", "down", ptrX, ptrY)); return; }
+      if (!kbOpen && ptrMode()) { P.mode = "ptr"; ptrDownApp = true; ptrX = p.x; ptrY = Math.min(AH - 1, Math.max(0, p.y - TOP)); guard(() => call("on_pointer", "down", ptrX, ptrY)); return; }
       P.mode = "legacy";
       P.holdT = setTimeout(() => { if (P.id !== null && P.mode === "legacy" && !P.moved) { P.hold = true; setSw(true); } }, 350);
     });
     oled.addEventListener("pointermove", e => {
       if (e.pointerId !== P.id) return;
       const p = opos(e); touchAct();
+      if (P.mode === "nav") { NAV.dx = p.x - P.sx; NAV.dy = p.y - P.sy; return; }
       if (P.mode === "kb") { if (Math.abs(p.x - P.lx) >= 2 || Math.abs(p.y - P.ly) >= 2) { P.lx = p.x; P.ly = p.y; kbTouch(1, p.x, p.y); } return; }
-      if (P.mode === "ptr") { const y = Math.max(0, p.y - TOP); if (p.x !== ptrX || y !== ptrY) { ptrX = p.x; ptrY = y; guard(() => call("on_pointer", "move", ptrX, ptrY)); } return; }
+      if (P.mode === "ptr") { const y = Math.min(AH - 1, Math.max(0, p.y - TOP)); if (p.x !== ptrX || y !== ptrY) { ptrX = p.x; ptrY = y; guard(() => call("on_pointer", "move", ptrX, ptrY)); } return; }
       if (P.mode !== "legacy") return;
       const dx = p.x - P.sx, dy = p.y - P.sy;
       if (!P.moved && (Math.abs(dx) > 14 || Math.abs(dy) > 14)) { P.moved = true; if (P.hold) { P.hold = false; setSw(false); } }
@@ -2926,7 +2953,12 @@ function __gc() collect(); collect() end
     const endPtr = e => {
       if (e.pointerId !== P.id) return;
       const mode = P.mode, dur = performance.now() - P.t; clearTimeout(P.holdT); P.id = null; P.mode = "";
-      if (mode === "title") { if (P.sx >= 268 && running) { say("Bar judul: tombol tutup (x): program ditutup (di perangkat membuka dialog Suspend/Close)."); stop(); } }
+      if (mode === "nav") {   // lepas kotak: atas = Home, kiri = Back, kanan = Recents (di perangkat: Back = Close, Home/Recents = Suspend; di simulator semuanya menghentikan program)
+        const q = opos(e), act = navPick(q.x - P.sx, q.y - P.sy); NAV.drag = false; NAV.dx = NAV.dy = 0;
+        if (act && running) { say(act === 2 ? "Navigasi: Back (di perangkat = Close aplikasi): program ditutup." : act === 1 ? "Navigasi: Home (di perangkat = Suspend ke Home): program dihentikan." : "Navigasi: Recents (di perangkat = Suspend lalu buka Recents): program dihentikan."); stop(); }
+      }
+      else if (mode === "bar") { }
+      else if (mode === "title") { if (P.sx >= 268 && running) { say("Bar judul: tombol tutup (x): program ditutup (di perangkat membuka dialog Suspend/Close)."); stop(); } }
       else if (mode === "kb") { const q = opos(e); kbTouch(2, q.x, q.y); }
       else if (mode === "ptr") { ptrDownApp = false; guard(() => call("on_pointer", "up", ptrX, ptrY)); }
       else if (mode === "legacy") {
@@ -3226,6 +3258,7 @@ function __gc() collect(); collect() end
       if (/unreachable|memory access out of bounds|^abort|RuntimeError/i.test(m)) return "mesin Lua simulator berhenti tak terduga (" + m + "); biasanya akibat memori habis atau rekursi terlalu dalam";
       return m; };
     function stop(quiet) {
+      NAV.drag = false; NAV.dx = NAV.dy = 0;
       runId++; loader.abort(); running = false; disp = null; hasPtrCb = false; ptrDownApp = false; ptrReq = -1e9; gcFn = null; kbOpen = false; kb = null; kbPend = null; clearTimeout(swTimer); cancelAnimationFrame(raf);
       if (eng) { try { eng.global.close(); } catch (e) {} eng = null; }
       ledAuto(); if (!quiet) setState("Berhenti");
@@ -3285,6 +3318,7 @@ function __gc() collect(); collect() end
       if ($("simDev").checked && ts - lastAct > 120000) { say("Tidak ada interaksi 120 dtk: program ditutup (panggil app.keep_alive() agar tetap berjalan)."); stop(); return; }
       const t1 = performance.now();
       try { if (call("draw") === false) throw new Error("draw() tidak ditemukan"); } catch (e) { fail(e); return; }
+      navDraw();   // kotak navigasi sistem di atas bar bawah (firmware: lcdNavDraw)
       blit();
       fN++; fMs += performance.now() - t1;
       if (ts - fT0 >= 500) { setState(`Berjalan · ${Math.round(fN * 1000 / (ts - fT0))} fps · draw ${(fMs / fN).toFixed(1)} ms`); fN = 0; fMs = 0; fT0 = ts; }
